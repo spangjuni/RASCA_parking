@@ -30,15 +30,21 @@
   import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
   import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-  // Firebase 설정 (필요시 실제 Firebase 프로젝트 설정 값으로 교체)
-  const firebaseConfig = typeof __firebase_config !== 'undefined' 
-    ? JSON.parse(__firebase_config) 
-    : { apiKey: "demo-key", authDomain: "demo.firebaseapp.com", projectId: "demo-project" };
+  // 실제 Firebase 설정 연동
+  const firebaseConfig = {
+    apiKey: "AIzaSyAxSvaqEi9FwI83hUtJ4TlFmcWPTDD67g0",
+    authDomain: "rascaparking.firebaseapp.com",
+    projectId: "rascaparking",
+    storageBucket: "rascaparking.firebasestorage.app",
+    messagingSenderId: "11042989524",
+    appId: "1:11042989524:web:60038de6d440812ec42241",
+    measurementId: "G-M3E6TL4Q9E"
+  };
     
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
   const db = getFirestore(app);
-  const appId = typeof __app_id !== 'undefined' ? __app_id : 'parking-system-default';
+  const appId = 'parking-system-default';
 
   // 팀 목록
   const TEAMS = ["3D", "2D", "FX", "MP", "PM", "SUP", "ETC"];
@@ -219,7 +225,7 @@
         <div class="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200">
           <div>
             <label class="block text-xs font-semibold text-slate-600 mb-1.5">이름</label>
-            <input type="text" id="input-name" class="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="예: 이준" value="${state.inputName}">
+            <input type="text" id="input-name" class="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="예: 홍길동" value="${state.inputName}">
           </div>
 
           <div>
@@ -683,54 +689,6 @@
     render();
   }
 
-  // 모달 적용 (다대수 예약 처리)
-  async function handleModalSubmit() {
-    if (state.isProcessing) return;
-    state.isProcessing = true;
-
-    try {
-      const u = state.currentUser;
-      const dateKey = state.modalDate;
-      const targetCount = parseInt(state.modalCount, 10);
-
-      const dayReservations = state.reservations.filter(r => r.date === dateKey && r.status !== 'rejected');
-      const myDayReservations = dayReservations.filter(r => r.employeeId === u.id);
-      const otherReservations = dayReservations.filter(r => r.employeeId !== u.id);
-
-      const availableSlots = MAX_PARKING_SLOTS - otherReservations.length;
-
-      if (targetCount > availableSlots) {
-        state.modalError = `남은 주차 자리가 부족합니다. (최대 ${availableSlots}대 가능)`;
-        state.isProcessing = false;
-        render();
-        return;
-      }
-
-      // 기존 나의 해당 날짜 예약 삭제 후 개수만큼 재등록
-      for (const res of myDayReservations) {
-        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', res.id));
-      }
-
-      for (let i = 0; i < targetCount; i++) {
-        const resId = `${dateKey}_${u.id}_${Date.now()}_${i}`;
-        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', resId), {
-          date: dateKey,
-          employeeId: u.id,
-          status: 'approved',
-          createdAt: Date.now() + i
-        });
-      }
-
-      showToast(`✅ ${dateKey} (${targetCount}대) 예약 완료`);
-      state.modalDate = null;
-    } catch (err) {
-      console.error(err);
-    } finally {
-      state.isProcessing = false;
-      render();
-    }
-  }
-
   // 색상 저장 처리
   async function saveUserColor(newColor) {
     const u = state.currentUser;
@@ -834,101 +792,124 @@
     });
 
     // 만차 안내 모달 닫기
-    if ($("btn-close-admin-notice")) {
-      $("btn-close-admin-notice").onclick = () => {
-        state.showAdminNoticeModal = false;
-        render();
-      };
-    }
+    if ($("btn-close-admin-notice")) $("btn-close-admin-notice").onclick = () => {
+      state.showAdminNoticeModal = false;
+      render();
+    };
 
-    // 네비게이션
     if ($("nav-cal")) $("nav-cal").onclick = () => { state.view = "calendar"; render(); };
     if ($("nav-my")) $("nav-my").onclick = () => { state.view = "my"; render(); };
     if ($("nav-admin")) $("nav-admin").onclick = () => { state.view = "admin"; render(); };
 
-    // 월 이동
-    if ($("prev-month")) {
-      $("prev-month").onclick = () => {
-        state.viewMonth--;
-        if (state.viewMonth < 0) {
-          state.viewMonth = 11;
-          state.viewYear--;
-        }
-        render();
-      };
-    }
-    if ($("next-month")) {
-      $("next-month").onclick = () => {
-        state.viewMonth++;
-        if (state.viewMonth > 11) {
-          state.viewMonth = 0;
-          state.viewYear++;
-        }
-        render();
-      };
-    }
+    if ($("prev-month")) $("prev-month").onclick = () => {
+      state.viewMonth = state.viewMonth === 0 ? 11 : state.viewMonth - 1;
+      if (state.viewMonth === 11) state.viewYear--;
+      render();
+    };
+    if ($("next-month")) $("next-month").onclick = () => {
+      state.viewMonth = state.viewMonth === 11 ? 0 : state.viewMonth + 1;
+      if (state.viewMonth === 0) state.viewYear++;
+      render();
+    };
 
-    // 달력 셀 터치/클릭 (클릭/long-press 감지)
+    // 달력 날짜 롱프레스 & 클릭 분리 처리
     document.querySelectorAll("[data-date]").forEach(cell => {
-      const dateKey = cell.getAttribute("data-date");
       let timer = null;
-      let isLongPress = false;
+      let isLongPressTriggered = false;
 
-      const startPress = () => {
-        isLongPress = false;
+      const startPress = (e) => {
+        isLongPressTriggered = false;
         timer = setTimeout(() => {
-          isLongPress = true;
+          isLongPressTriggered = true;
+          const dateKey = cell.getAttribute("data-date");
           handleLongPress(dateKey);
-        }, 500);
+        }, 550);
       };
 
-      const endPress = () => {
-        clearTimeout(timer);
+      const cancelPress = () => {
+        if (timer) clearTimeout(timer);
       };
 
       cell.onmousedown = startPress;
-      cell.onmouseup = () => {
-        endPress();
-        if (!isLongPress) handleSingleClickToggle(dateKey);
-      };
-      cell.onmouseleave = endPress;
-
       cell.ontouchstart = startPress;
-      cell.ontouchend = (e) => {
-        endPress();
-        if (!isLongPress) {
-          e.preventDefault();
-          handleSingleClickToggle(dateKey);
-        }
+
+      cell.onmouseup = cancelPress;
+      cell.onmouseleave = cancelPress;
+      cell.ontouchend = cancelPress;
+      cell.ontouchcancel = cancelPress;
+
+      cell.onclick = (e) => {
+        if (isLongPressTriggered) return;
+        const dateKey = cell.getAttribute("data-date");
+        handleSingleClickToggle(dateKey);
+      };
+
+      cell.oncontextmenu = (e) => {
+        e.preventDefault();
+        cancelPress();
+        const dateKey = cell.getAttribute("data-date");
+        handleLongPress(dateKey);
       };
     });
 
-    // 내 예약 목록 취소 버튼
+    // 모달 이벤트 핸들러
+    if ($("modal-close")) $("modal-close").onclick = () => { state.modalDate = null; render(); };
+    if ($("modal-cancel-btn")) $("modal-cancel-btn").onclick = () => { state.modalDate = null; render(); };
+    if ($("modal-count")) $("modal-count").onchange = (e) => { state.modalCount = Number(e.target.value); };
+
+    if ($("modal-submit-btn")) $("modal-submit-btn").onclick = async () => {
+      const u = state.currentUser;
+      const dateKey = state.modalDate;
+
+      const currentApprovedOther = state.reservations.filter(r => r.date === dateKey && r.status === 'approved' && r.employeeId !== u.id).length;
+
+      if (currentApprovedOther + state.modalCount > MAX_PARKING_SLOTS) {
+        state.modalDate = null;
+        showAdminNotice(dateKey);
+        return;
+      }
+
+      const myDayReservations = state.reservations.filter(r => r.date === dateKey && r.employeeId === u.id && r.status !== 'rejected');
+      for (const res of myDayReservations) {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', res.id));
+      }
+
+      for (let i = 0; i < state.modalCount; i++) {
+        const resId = `${dateKey}_${u.id}_${Date.now()}_${i}`;
+
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', resId), {
+          date: dateKey,
+          employeeId: u.id,
+          status: 'approved',
+          createdAt: Date.now() + i
+        });
+      }
+
+      showToast(`${dateKey} ${state.modalCount}대 적용 완료`);
+      state.modalDate = null;
+      render();
+    };
+
+    // 내 예약 취소 버튼
     document.querySelectorAll("[data-cancel-id]").forEach(btn => {
       btn.onclick = async () => {
         const id = btn.getAttribute("data-cancel-id");
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', id));
-        showToast("예약이 취소되었습니다.");
+        showToast("예약 취소 완료");
       };
     });
 
-    // 관리자 거절/삭제 버튼
+    // 관리자 삭제
     document.querySelectorAll("[data-reject-id]").forEach(btn => {
       btn.onclick = async () => {
         const id = btn.getAttribute("data-reject-id");
         await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', id));
-        showToast("예약이 삭제되었습니다.");
+        showToast("삭제 완료");
       };
     });
-
-    // 모달 이벤트
-    if ($("modal-close")) $("modal-close").onclick = () => { state.modalDate = null; render(); };
-    if ($("modal-cancel-btn")) $("modal-cancel-btn").onclick = () => { state.modalDate = null; render(); };
-    if ($("modal-count")) $("modal-count").onchange = (e) => { state.modalCount = e.target.value; };
-    if ($("modal-submit-btn")) $("modal-submit-btn").onclick = handleModalSubmit;
   }
 
-  // 실행 시작
+  // 앱 시작
   initAuthAndData();
 </script>
 </body>
