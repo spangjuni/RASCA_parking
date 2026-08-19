@@ -10,7 +10,7 @@
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
     <style>
-        .full-park { background-color: #fee2e2; } /* 만차 시 붉은 배경 */
+        .full-park { background-color: #fee2e2; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-4">
@@ -49,7 +49,7 @@
             <button onclick="logout()" class="text-xs text-gray-400 underline hover:text-gray-600">로그아웃</button>
         </div>
 
-        <!-- 예약 현황 및 버튼 -->
+        <!-- 예약 현황 -->
         <div id="parking-status-card" class="p-4 rounded-lg border text-center transition-colors mb-4 bg-gray-50">
             <p class="text-sm text-gray-600 mb-1">오늘의 주차 상태</p>
             <div id="status-text" class="text-2xl font-bold text-gray-800">로딩 중...</div>
@@ -58,59 +58,46 @@
         <div class="space-y-2">
             <button id="reserve-btn" 
                     onclick="handleSingleClick()" 
-                    oncontextmenu="handleLongPress(event)" 
                     class="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 active:scale-95 transition-transform">
                 주차 예약 / 취소 (클릭)
             </button>
-            <p class="text-xs text-center text-gray-400">* 길게 누르거나 우클릭 시 상세 현황 확인</p>
         </div>
     </div>
 
     <script>
-        // Firebase 설정 (실제 본인의 Firebase 콘솔 설정값으로 변경해야 데이터가 저장됩니다)
+        // 사용자분의 Firebase 인증 정보 반영 완료
         const firebaseConfig = {
-            apiKey: "YOUR_API_KEY",
-            authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-            databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-            projectId: "YOUR_PROJECT_ID",
-            storageBucket: "YOUR_PROJECT_ID.appspot.com",
-            messagingSenderId: "YOUR_SENDER_ID",
-            appId: "YOUR_APP_ID"
+            apiKey: "AIzaSyAxSvaqEi9FwI83hUtJ4TlFmcWPTDD67g0",
+            authDomain: "rascaparking.firebaseapp.com",
+            databaseURL: "https://rascaparking-default-rtdb.firebaseio.com",
+            projectId: "rascaparking",
+            storageBucket: "rascaparking.firebasestorage.app",
+            messagingSenderId: "11042989524",
+            appId: "1:11042989524:web:60038de6d440812ec42241"
         };
 
         let database = null;
         let currentUser = null;
 
-        // Firebase 안전 초기화
         try {
-            if (firebaseConfig.apiKey !== "YOUR_API_KEY") {
-                firebase.initializeApp(firebaseConfig);
-                database = firebase.database();
-            }
+            firebase.initializeApp(firebaseConfig);
+            database = firebase.database();
         } catch (e) {
             console.error("Firebase 초기화 오류:", e);
         }
 
-        // 로그인
         function login() {
             const name = document.getElementById('user-name').value.trim();
             const team = document.getElementById('user-team').value;
 
-            if (!name) {
-                alert('이름을 입력해 주세요.');
-                return;
-            }
-            if (!team) {
-                alert('팀명을 선택해 주세요.');
-                return;
-            }
+            if (!name) return alert('이름을 입력해 주세요.');
+            if (!team) return alert('팀명을 선택해 주세요.');
 
             currentUser = { name, team };
             localStorage.setItem('park_user', JSON.stringify(currentUser));
             showApp();
         }
 
-        // 로그아웃
         function logout() {
             localStorage.removeItem('park_user');
             currentUser = null;
@@ -118,7 +105,6 @@
             document.getElementById('app-card').classList.add('hidden');
         }
 
-        // 앱 화면 전환
         function showApp() {
             document.getElementById('login-card').classList.add('hidden');
             document.getElementById('app-card').classList.remove('hidden');
@@ -128,16 +114,12 @@
             listenToParkingStatus();
         }
 
-        // 실시간 상태 수신
         function listenToParkingStatus() {
             const statusCard = document.getElementById('parking-status-card');
             const statusText = document.getElementById('status-text');
 
-            // Firebase가 설정되지 않은 경우 가이드 안내
             if (!database) {
-                statusText.innerText = "설정 필요";
-                statusText.classList.add("text-amber-600");
-                alert("코드 내 firebaseConfig 부분에 실제 Firebase 인증 정보를 입력해야 실시간 연동이 완료됩니다.");
+                statusText.innerText = "연결 오류";
                 return;
             }
 
@@ -147,7 +129,7 @@
             parkingRef.on('value', (snapshot) => {
                 const data = snapshot.val() || {};
                 const count = Object.keys(data).length;
-                const maxCapacity = 10; // 최대 주차 가능 대수
+                const maxCapacity = 10;
 
                 if (count >= maxCapacity) {
                     statusCard.classList.add('full-park');
@@ -158,16 +140,12 @@
                 }
             }, (error) => {
                 console.error("데이터 읽기 오류:", error);
-                statusText.innerText = "연결 오류";
+                statusText.innerText = "데이터베이스를 생성해주세요";
             });
         }
 
-        // 1대 예약 / 취소
         function handleSingleClick() {
-            if (!database) {
-                alert("Firebase 설정이 완료되지 않았습니다.");
-                return;
-            }
+            if (!database) return alert("데이터베이스 연결에 실패했습니다.");
 
             const today = new Date().toISOString().split('T')[0];
             const userKey = `${currentUser.team}_${currentUser.name}`;
@@ -188,13 +166,6 @@
             });
         }
 
-        // 롱프레스 / 우클릭 관리
-        function handleLongPress(e) {
-            e.preventDefault();
-            alert('상세 현황 기능 영역입니다.');
-        }
-
-        // 자동 로그인 확인
         window.onload = () => {
             const saved = localStorage.getItem('park_user');
             if (saved) {
