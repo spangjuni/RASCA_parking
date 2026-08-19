@@ -102,7 +102,6 @@
             console.error("Firebase 초기화 오류:", e);
         }
 
-        // 오늘 날짜를 YYYY-MM-DD 형식으로 구하기
         function getTodayString() {
             const today = new Date();
             const year = today.getFullYear();
@@ -136,7 +135,6 @@
             document.getElementById('display-user').innerText = currentUser.name;
             document.getElementById('display-team').innerText = `[${currentUser.team}]`;
             
-            // 기본 선택 날짜를 오늘로 설정
             if (!selectedDate) {
                 selectedDate = getTodayString();
             }
@@ -163,7 +161,6 @@
                 return;
             }
 
-            // 기존 리스너 해제 후 선택된 날짜 리스너 등록
             if (parkingListener) {
                 parkingListener.off();
             }
@@ -184,7 +181,6 @@
                     statusText.innerText = `여유 (${count}/${maxCapacity})`;
                 }
 
-                // 명단 리스트 업데이트
                 listEl.innerHTML = '';
                 if (count === 0) {
                     listEl.innerHTML = '<li class="p-3 text-center text-gray-400">예약 내역이 없습니다.</li>';
