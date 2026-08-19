@@ -49,23 +49,37 @@
             <button onclick="logout()" class="text-xs text-gray-400 underline hover:text-gray-600">로그아웃</button>
         </div>
 
-        <!-- 예약 현황 -->
+        <!-- 달력 날짜 선택 -->
+        <div class="mb-4">
+            <label class="block text-xs font-semibold text-gray-500 mb-1">예약 날짜 선택</label>
+            <input type="date" id="target-date" onchange="onDateChange()" class="w-full p-2 border rounded-lg font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+        </div>
+
+        <!-- 예약 현황 Card -->
         <div id="parking-status-card" class="p-4 rounded-lg border text-center transition-colors mb-4 bg-gray-50">
-            <p class="text-sm text-gray-600 mb-1">오늘의 주차 상태</p>
+            <p class="text-sm text-gray-600 mb-1"><span id="selected-date-text">오늘</span>의 주차 상태</p>
             <div id="status-text" class="text-2xl font-bold text-gray-800">로딩 중...</div>
         </div>
 
-        <div class="space-y-2">
+        <!-- 예약 버튼 -->
+        <div class="space-y-2 mb-6">
             <button id="reserve-btn" 
                     onclick="handleSingleClick()" 
                     class="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 active:scale-95 transition-transform">
-                주차 예약 / 취소 (클릭)
+                주차 예약 / 취소
             </button>
+        </div>
+
+        <!-- 해당 날짜 명단 목록 -->
+        <div>
+            <h3 class="text-sm font-bold text-gray-700 mb-2">예약자 명단</h3>
+            <ul id="reservation-list" class="divide-y border rounded-lg overflow-hidden text-sm max-h-48 overflow-y-auto">
+                <li class="p-3 text-center text-gray-400">예약 내역이 없습니다.</li>
+            </ul>
         </div>
     </div>
 
     <script>
-        // 사용자분의 Firebase 인증 정보 반영 완료
         const firebaseConfig = {
             apiKey: "AIzaSyAxSvaqEi9FwI83hUtJ4TlFmcWPTDD67g0",
             authDomain: "rascaparking.firebaseapp.com",
@@ -78,12 +92,23 @@
 
         let database = null;
         let currentUser = null;
+        let selectedDate = "";
+        let parkingListener = null;
 
         try {
             firebase.initializeApp(firebaseConfig);
             database = firebase.database();
         } catch (e) {
             console.error("Firebase 초기화 오류:", e);
+        }
+
+        // 오늘 날짜를 YYYY-MM-DD 형식으로 구하기
+        function getTodayString() {
+            const today = new Date();
+            const year = today.getFullYear();
+            const month = String(today.getMonth() + 1).padStart(2, '0');
+            const day = String(today.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
         }
 
         function login() {
@@ -111,24 +136,44 @@
             document.getElementById('display-user').innerText = currentUser.name;
             document.getElementById('display-team').innerText = `[${currentUser.team}]`;
             
+            // 기본 선택 날짜를 오늘로 설정
+            if (!selectedDate) {
+                selectedDate = getTodayString();
+            }
+            document.getElementById('target-date').value = selectedDate;
+            
+            listenToParkingStatus();
+        }
+
+        function onDateChange() {
+            selectedDate = document.getElementById('target-date').value;
             listenToParkingStatus();
         }
 
         function listenToParkingStatus() {
             const statusCard = document.getElementById('parking-status-card');
             const statusText = document.getElementById('status-text');
+            const dateText = document.getElementById('selected-date-text');
+            const listEl = document.getElementById('reservation-list');
+
+            dateText.innerText = selectedDate;
 
             if (!database) {
                 statusText.innerText = "연결 오류";
                 return;
             }
 
-            const today = new Date().toISOString().split('T')[0];
-            const parkingRef = database.ref('parking/' + today);
+            // 기존 리스너 해제 후 선택된 날짜 리스너 등록
+            if (parkingListener) {
+                parkingListener.off();
+            }
 
-            parkingRef.on('value', (snapshot) => {
+            parkingListener = database.ref('parking/' + selectedDate);
+
+            parkingListener.on('value', (snapshot) => {
                 const data = snapshot.val() || {};
-                const count = Object.keys(data).length;
+                const keys = Object.keys(data);
+                const count = keys.length;
                 const maxCapacity = 10;
 
                 if (count >= maxCapacity) {
@@ -138,35 +183,53 @@
                     statusCard.classList.remove('full-park');
                     statusText.innerText = `여유 (${count}/${maxCapacity})`;
                 }
+
+                // 명단 리스트 업데이트
+                listEl.innerHTML = '';
+                if (count === 0) {
+                    listEl.innerHTML = '<li class="p-3 text-center text-gray-400">예약 내역이 없습니다.</li>';
+                } else {
+                    keys.forEach((key) => {
+                        const item = data[key];
+                        const li = document.createElement('li');
+                        li.className = 'p-3 flex justify-between items-center bg-white border-b last:border-b-0';
+                        li.innerHTML = `
+                            <span class="font-medium text-gray-800">${item.name}</span>
+                            <span class="text-xs bg-gray-200 px-2 py-1 rounded font-semibold text-gray-600">${item.team}</span>
+                        `;
+                        listEl.appendChild(li);
+                    });
+                }
             }, (error) => {
                 console.error("데이터 읽기 오류:", error);
-                statusText.innerText = "데이터베이스를 생성해주세요";
+                statusText.innerText = "DB 연결 확인 필요";
             });
         }
 
         function handleSingleClick() {
             if (!database) return alert("데이터베이스 연결에 실패했습니다.");
+            if (!selectedDate) return alert("날짜를 선택해 주세요.");
 
-            const today = new Date().toISOString().split('T')[0];
             const userKey = `${currentUser.team}_${currentUser.name}`;
-            const userRef = database.ref(`parking/${today}/${userKey}`);
+            const userRef = database.ref(`parking/${selectedDate}/${userKey}`);
 
             userRef.once('value').then((snapshot) => {
                 if (snapshot.exists()) {
                     userRef.remove();
-                    alert('예약이 취소되었습니다.');
+                    alert(`${selectedDate} 예약이 취소되었습니다.`);
                 } else {
                     userRef.set({
                         name: currentUser.name,
                         team: currentUser.team,
                         timestamp: Date.now()
                     });
-                    alert('주차 예약이 완료되었습니다.');
+                    alert(`${selectedDate} 주차 예약이 완료되었습니다.`);
                 }
             });
         }
 
         window.onload = () => {
+            selectedDate = getTodayString();
             const saved = localStorage.getItem('park_user');
             if (saved) {
                 currentUser = JSON.parse(saved);
