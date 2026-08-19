@@ -1,237 +1,935 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>사내 주차 예약 시스템</title>
-    <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Firebase SDK (v9 Compact Mode) -->
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
-    <style>
-        .full-park { background-color: #fee2e2; }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사내 주차 예약 시스템</title>
+<!-- Tailwind CSS CDN -->
+<script src="https://cdn.tailwindcss.com"></script>
+<!-- Lucide Icons -->
+<script src="https://unpkg.com/lucide@latest"></script>
+<style>
+  @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+  body { font-family: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif; user-select: none; -webkit-user-select: none; }
+  .dot-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2.5px; }
+  .cell-btn:active { transform: scale(0.96); }
+</style>
 </head>
-<body class="bg-gray-100 min-h-screen flex flex-col items-center justify-center p-4">
+<body class="bg-slate-50 text-slate-800 antialiased min-h-screen">
 
-    <!-- 로그인 화면 -->
-    <div id="login-card" class="bg-white p-6 rounded-xl shadow-md w-full max-w-md">
-        <h1 class="text-xl font-bold mb-4 text-center">주차 시스템 로그인</h1>
-        <div class="space-y-3">
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 mb-1">이름</label>
-                <input type="text" id="user-name" placeholder="이름을 입력하세요" class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
+<div class="max-w-md mx-auto min-h-screen bg-white shadow-lg flex flex-col justify-between" id="app">
+  <!-- 로딩 화면 -->
+  <div class="flex-1 flex items-center justify-center p-8 text-slate-400">
+    <i data-lucide="loader-2" class="w-8 h-8 animate-spin text-blue-600"></i>
+  </div>
+</div>
+
+<!-- Firebase SDKs -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+  import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+  import { getFirestore, collection, doc, setDoc, onSnapshot, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+  // Firebase 설정 (필요시 실제 Firebase 프로젝트 설정 값으로 교체)
+  const firebaseConfig = typeof __firebase_config !== 'undefined' 
+    ? JSON.parse(__firebase_config) 
+    : { apiKey: "demo-key", authDomain: "demo.firebaseapp.com", projectId: "demo-project" };
+    
+  const app = initializeApp(firebaseConfig);
+  const auth = getAuth(app);
+  const db = getFirestore(app);
+  const appId = typeof __app_id !== 'undefined' ? __app_id : 'parking-system-default';
+
+  // 팀 목록
+  const TEAMS = ["3D", "2D", "FX", "MP", "PM", "SUP", "ETC"];
+
+  // 18가지 컬러 팔레트
+  const COLOR_PRESETS = [
+    "#2563eb", "#0284c7", "#06b6d4", "#0d9488", "#16a34a", "#84cc16",
+    "#eab308", "#d97706", "#ea580c", "#e11d48", "#ec4899", "#f43f5e",
+    "#a855f7", "#8b5cf6", "#6366f1", "#78716c", "#475569", "#1e293b"
+  ];
+
+  const MAX_PARKING_SLOTS = 4; // 최대 가능 주차 대수
+
+  let state = {
+    user: null,
+    currentUser: null, // 로그인한 유저 { id, name, team, carColor, isAdmin }
+    userProfiles: {}, // 사용자 색상 및 정보 수신
+    reservations: [],
+    view: "calendar", // 'calendar' | 'my' | 'admin'
+    viewYear: new Date().getFullYear(),
+    viewMonth: new Date().getMonth(),
+    
+    // 로그인 입력 폼 상태
+    inputName: "",
+    inputTeam: "3D",
+    loginError: "",
+
+    toastMessage: "",
+    modalDate: null,
+    modalCount: 1,
+    modalError: "",
+    showColorPicker: false,
+    showAdminNoticeModal: false, // 만차 시 안내 모달
+    adminNoticeDate: "",
+    isLoading: true,
+    isProcessing: false
+  };
+
+  // 날짜 유틸
+  const pad = (n) => String(n).padStart(2, "0");
+  const toDateKey = (y, m, d) => `${y}-${pad(m + 1)}-${pad(d)}`;
+  const todayKey = () => { const t = new Date(); return toDateKey(t.getFullYear(), t.getMonth(), t.getDate()); };
+
+  // 사용자 정보 동적 조회
+  function employeeById(id) {
+    const profile = state.userProfiles[id];
+    if (profile) {
+      return {
+        id: id,
+        name: profile.name || "사용자",
+        team: profile.team || "ETC",
+        carColor: profile.carColor || "#2563eb",
+        isAdmin: profile.team === "SUP" || (profile.name && profile.name.includes("관리자"))
+      };
+    }
+    if (state.currentUser && state.currentUser.id === id) {
+      return state.currentUser;
+    }
+    return { id: id, name: "사용자", team: "ETC", carColor: "#94a3b8", isAdmin: false };
+  }
+
+  // 토스트 메시지
+  function showToast(msg) {
+    state.toastMessage = msg;
+    render();
+    setTimeout(() => {
+      state.toastMessage = "";
+      render();
+    }, 2000);
+  }
+
+  // DB 연동 및 초깃값 세팅
+  async function initAuthAndData() {
+    // 로컬스토리지에 저장된 자동 로그인 정보 즉시 복원
+    const savedUserStr = localStorage.getItem("parking_app_saved_user");
+    if (savedUserStr) {
+      try {
+        state.currentUser = JSON.parse(savedUserStr);
+      } catch (e) {
+        console.warn("자동 로그인 데이터 읽기 실패:", e);
+      }
+    }
+
+    try {
+      if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+        await signInWithCustomToken(auth, __initial_auth_token);
+      } else {
+        await signInAnonymously(auth);
+      }
+    } catch (err) {
+      console.warn("Auth fallback:", err);
+    }
+
+    onAuthStateChanged(auth, (user) => {
+      state.user = user;
+      if (user) {
+        // 1. 주차 예약 목록 수신
+        const resCollection = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
+        onSnapshot(resCollection, (snapshot) => {
+          const list = [];
+          snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
+          state.reservations = list;
+          state.isLoading = false;
+          render();
+        }, (error) => {
+          console.error("Firestore 수신 오류:", error);
+          state.isLoading = false;
+          render();
+        });
+
+        // 2. 사용자 프로필 수신
+        const profileCollection = collection(db, 'artifacts', appId, 'public', 'data', 'user_profiles');
+        onSnapshot(profileCollection, (snapshot) => {
+          const profiles = {};
+          snapshot.forEach(doc => {
+            profiles[doc.id] = doc.data();
+          });
+          state.userProfiles = profiles;
+
+          // 현재 세션의 최신 색상/정보 동기화
+          if (state.currentUser && profiles[state.currentUser.id]) {
+            state.currentUser.carColor = profiles[state.currentUser.id].carColor || state.currentUser.carColor;
+          }
+          render();
+        }, (err) => console.warn("프로필 수신 실패:", err));
+
+      } else {
+        state.isLoading = false;
+        render();
+      }
+    });
+  }
+
+  // 화면 렌더링
+  function render() {
+    const app = document.getElementById("app");
+    if (state.isLoading) return;
+
+    if (!state.currentUser) {
+      app.innerHTML = renderLogin();
+    } else {
+      app.innerHTML = `
+        <div class="flex-1 pb-20">
+          ${renderHeader()}
+          ${state.toastMessage ? `
+            <div class="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900/90 text-white text-xs py-2 px-4 rounded-full shadow-lg transition">
+              ${state.toastMessage}
             </div>
-            <div>
-                <label class="block text-xs font-semibold text-gray-500 mb-1">팀명 선택</label>
-                <select id="user-team" class="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white">
-                    <option value="">팀을 선택하세요</option>
-                    <option value="SUP">SUP</option>
-                    <option value="3D">3D</option>
-                    <option value="2D">2D</option>
-                    <option value="MP">MP</option>
-                    <option value="PM">PM</option>
-                    <option value="ETC">ETC</option>
-                </select>
-            </div>
-            <button onclick="login()" class="w-full bg-blue-600 text-white py-2 rounded-lg font-semibold hover:bg-blue-700 transition-colors">접속하기</button>
+          ` : ''}
+          <main class="p-4">
+            ${state.view === 'calendar' ? renderCalendar() : ''}
+            ${state.view === 'my' ? renderMyReservations() : ''}
+            ${state.view === 'admin' ? renderAdmin() : ''}
+          </main>
         </div>
-    </div>
+        ${renderBottomNav()}
+        ${state.modalDate ? renderModal() : ''}
+        ${state.showColorPicker ? renderColorPickerModal() : ''}
+        ${state.showAdminNoticeModal ? renderAdminNoticeModal() : ''}
+      `;
+    }
 
-    <!-- 주차 예약 메인 화면 -->
-    <div id="app-card" class="bg-white p-6 rounded-xl shadow-md w-full max-w-md hidden">
-        <div class="flex justify-between items-center mb-4">
-            <div>
-                <span id="display-user" class="font-bold text-lg"></span>
-                <span id="display-team" class="text-sm text-gray-500 ml-1"></span>
-            </div>
-            <button onclick="logout()" class="text-xs text-gray-400 underline hover:text-gray-600">로그아웃</button>
+    lucide.createIcons();
+    attachHandlers();
+  }
+
+  function renderLogin() {
+    return `
+      <div class="flex-1 flex flex-col justify-center p-6">
+        <div class="text-center mb-8">
+          <div class="w-16 h-16 bg-blue-100 text-blue-600 rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-inner">
+            <i data-lucide="car" class="w-8 h-8"></i>
+          </div>
+          <h1 class="text-2xl font-bold text-slate-900">사내 주차 예약</h1>
+          <p class="text-xs text-slate-500 mt-1">이름과 팀을 입력하면 자동 로그인됩니다.</p>
         </div>
 
-        <!-- 달력 날짜 선택 -->
+        <div class="space-y-4 bg-slate-50 p-5 rounded-2xl border border-slate-200">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1.5">이름</label>
+            <input type="text" id="input-name" class="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white" placeholder="예: 이준" value="${state.inputName}">
+          </div>
+
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1.5">팀 선택</label>
+            <select id="input-team" class="w-full px-3.5 py-3 rounded-xl border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none text-sm bg-white font-medium">
+              ${TEAMS.map(t => `<option value="${t}" ${state.inputTeam===t?'selected':''}>${t} 팀</option>`).join('')}
+            </select>
+          </div>
+          
+          ${state.loginError ? `<p class="text-xs text-red-500 font-medium">${state.loginError}</p>` : ''}
+
+          <button id="btn-login" class="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl text-sm transition shadow-sm mt-2">
+            접속하기
+          </button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderHeader() {
+    const u = employeeById(state.currentUser.id);
+    return `
+      <header class="bg-white border-b border-slate-200 px-4 py-3 sticky top-0 z-10 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div id="btn-open-color" class="relative group cursor-pointer" title="내 색상 변경">
+            <div class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shadow-sm transition-transform active:scale-95" style="background:${u.carColor}">
+              ${u.name.substring(0, 1)}
+            </div>
+            <span class="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 bg-white rounded-full border border-slate-200 flex items-center justify-center text-[9px] text-slate-600 shadow-sm">
+              <i data-lucide="palette" class="w-2.5 h-2.5"></i>
+            </span>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-1.5">
+              <span class="font-bold text-slate-900 text-sm">${u.name} (${u.team})</span>
+              ${u.isAdmin ? `<span class="bg-purple-100 text-purple-700 text-[10px] px-1.5 py-0.5 rounded font-semibold">관리자</span>` : ''}
+            </div>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-1">
+          <button id="btn-logout" class="p-2 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition" title="로그아웃">
+            <i data-lucide="log-out" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </header>
+    `;
+  }
+
+  function renderCalendar() {
+    const y = state.viewYear, m = state.viewMonth;
+    const nDays = new Date(y, m + 1, 0).getDate();
+    const startDow = new Date(y, m, 1).getDay();
+    const days = ["일", "월", "화", "수", "목", "금", "토"];
+
+    let cellsHtml = "";
+    for (let i = 0; i < startDow; i++) cellsHtml += `<div class="aspect-square"></div>`;
+
+    for (let d = 1; d <= nDays; d++) {
+      const dateKey = toDateKey(y, m, d);
+      const dayRes = state.reservations.filter(r => r.date === dateKey && r.status !== 'rejected');
+      const myDayRes = dayRes.filter(r => r.employeeId === state.currentUser.id);
+      const hasMyBooking = myDayRes.length > 0;
+
+      const isPast = dateKey < todayKey();
+      const isToday = dateKey === todayKey();
+      const isFull = dayRes.filter(r => r.status === 'approved').length >= MAX_PARKING_SLOTS;
+
+      let dots = "";
+      for (let i = 0; i < MAX_PARKING_SLOTS; i++) {
+        const r = dayRes[i];
+        if (r) {
+          const emp = employeeById(r.employeeId);
+          const isApproved = r.status === "approved";
+          const isMyCar = r.employeeId === state.currentUser.id;
+
+          dots += `<span class="w-1.5 h-1.5 rounded-full border border-white transition-transform ${isMyCar ? 'scale-125 ring-1 ring-blue-500 z-10' : ''}" style="background:${isApproved ? emp.carColor : 'transparent'}; border-color:${emp.carColor}; border-style:${isApproved?'solid':'dashed'}"></span>`;
+        } else {
+          dots += `<span class="w-1.5 h-1.5 rounded-full bg-slate-200"></span>`;
+        }
+      }
+
+      // 셀 배경 색상
+      let cellBgClass = 'bg-white';
+      if (hasMyBooking) {
+        cellBgClass = 'bg-blue-50/70 border-blue-400';
+      } else if (isFull) {
+        cellBgClass = 'bg-red-50/80 border-red-200';
+      }
+
+      cellsHtml += `
+        <div data-date="${dateKey}" class="cell-btn aspect-square border rounded-xl p-1.5 flex flex-col justify-between cursor-pointer transition select-none ${isPast ? 'bg-slate-100/60 text-slate-400 cursor-not-allowed border-slate-200' : 'hover:border-blue-500 hover:shadow-sm ' + cellBgClass} ${isToday ? 'ring-2 ring-blue-600 ring-offset-1' : ''}">
+          <div class="flex justify-between items-center">
+            <span class="text-xs font-bold ${isPast ? 'text-slate-400' : 'text-slate-800'}">${d}</span>
+          </div>
+
+          <div class="dot-grid mx-auto my-auto">${dots}</div>
+          <div class="h-2"></div>
+        </div>
+      `;
+    }
+
+    return `
+      <div>
+        <div class="bg-slate-100 border border-slate-200 p-3 rounded-xl mb-4 text-xs text-slate-700 leading-relaxed">
+          <ul class="space-y-1 text-[11px] text-slate-600">
+            <li>• <b>클릭</b>: 1대 예약 / 취소</li>
+            <li>• <b>꾹 누르기</b>: 다대수 예약 및 상세 현황</li>
+          </ul>
+        </div>
+
+        <div class="flex items-center justify-between mb-3">
+          <button id="prev-month" class="p-2 border border-slate-200 rounded-lg hover:bg-slate-50"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+          <h2 class="font-bold text-base text-slate-800">${y}년 ${m + 1}월</h2>
+          <button id="next-month" class="p-2 border border-slate-200 rounded-lg hover:bg-slate-50"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+        </div>
+
+        <div class="grid grid-cols-7 text-center text-xs font-medium text-slate-400 mb-2">
+          ${days.map((d, idx) => `<div class="${idx===0?'text-red-400':idx===6?'text-blue-400':''}">${d}</div>`).join('')}
+        </div>
+
+        <div class="grid grid-cols-7 gap-1.5 mb-5">
+          ${cellsHtml}
+        </div>
+
+        <div class="flex items-center justify-center gap-4 text-xs text-slate-500 bg-slate-100 py-2 rounded-xl">
+          <div class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-md bg-blue-100 border border-blue-400"></span>내 예약</div>
+          <div class="flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-md bg-red-100 border border-red-200"></span>만차</div>
+          <div class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-slate-200"></span>빈 면</div>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderMyReservations() {
+    const u = employeeById(state.currentUser.id);
+    const myRes = state.reservations
+      .filter(r => r.employeeId === u.id)
+      .sort((a, b) => a.date < b.date ? 1 : -1);
+
+    return `
+      <div>
+        <div class="bg-white border border-slate-200 p-3.5 rounded-xl mb-4 flex items-center justify-between shadow-sm">
+          <div class="flex items-center gap-3">
+            <span class="w-7 h-7 rounded-full shadow-inner border border-white" style="background:${u.carColor}"></span>
+            <div>
+              <p class="text-xs font-bold text-slate-800">내 주차 표시 색상</p>
+              <p class="text-[11px] text-slate-500">달력에 표시되는 색상입니다.</p>
+            </div>
+          </div>
+          <button id="btn-change-color-card" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-lg font-semibold transition">
+            변경
+          </button>
+        </div>
+
+        <h2 class="font-bold text-base text-slate-800 mb-3">내 예약 목록</h2>
+        ${myRes.length === 0 ? `
+          <div class="text-center py-12 text-slate-400">
+            <i data-lucide="calendar-x" class="w-10 h-10 mx-auto mb-2 opacity-40"></i>
+            <p class="text-sm">예약 내역이 없습니다.</p>
+          </div>
+        ` : `
+          <div class="space-y-2.5">
+            ${myRes.map(r => `
+              <div class="bg-white border border-slate-200 p-3.5 rounded-xl flex items-center justify-between shadow-sm">
+                <div>
+                  <div class="flex items-center gap-2">
+                    <span class="font-bold text-slate-800 text-sm">${r.date}</span>
+                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold bg-green-100 text-green-700">
+                      예약 완료
+                    </span>
+                  </div>
+                </div>
+                ${r.date >= todayKey() ? `
+                  <button data-cancel-id="${r.id}" class="text-xs text-red-600 bg-red-50 hover:bg-red-100 px-3 py-1.5 rounded-lg border border-red-200 font-semibold">
+                    취소
+                  </button>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        `}
+      </div>
+    `;
+  }
+
+  function renderAdmin() {
+    const dates = [...new Set(state.reservations.filter(r => r.status !== "rejected").map(r => r.date))]
+      .filter(d => d >= todayKey()).sort();
+
+    return `
+      <div>
         <div class="mb-4">
-            <label class="block text-xs font-semibold text-gray-500 mb-1">예약 날짜 선택</label>
-            <input type="date" id="target-date" onchange="onDateChange()" class="w-full p-2 border rounded-lg font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <h2 class="font-bold text-base text-slate-800">관리자 현황</h2>
+          <p class="text-xs text-slate-500 mt-0.5">날짜별 예약자 목록입니다.</p>
         </div>
 
-        <!-- 예약 현황 Card -->
-        <div id="parking-status-card" class="p-4 rounded-lg border text-center transition-colors mb-4 bg-gray-50">
-            <p class="text-sm text-gray-600 mb-1"><span id="selected-date-text">오늘</span>의 주차 상태</p>
-            <div id="status-text" class="text-2xl font-bold text-gray-800">로딩 중...</div>
+        ${dates.length === 0 ? `
+          <div class="text-center py-12 text-slate-400">
+            <i data-lucide="check-circle-2" class="w-10 h-10 mx-auto mb-2 opacity-40 text-green-500"></i>
+            <p class="text-sm">예약 내역이 없습니다.</p>
+          </div>
+        ` : `
+          <div class="space-y-4">
+            ${dates.map(dateKey => {
+              const list = state.reservations
+                .filter(r => r.date === dateKey && r.status !== "rejected")
+                .sort((a, b) => a.createdAt - b.createdAt);
+              const approvedCount = list.filter(r => r.status === "approved").length;
+
+              return `
+                <div class="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                  <div class="flex justify-between items-center mb-2.5">
+                    <span class="font-bold text-sm text-slate-900">${dateKey}</span>
+                    <span class="text-xs font-bold ${approvedCount >= MAX_PARKING_SLOTS ? 'text-red-600' : 'text-blue-600'}">
+                      ${approvedCount} / ${MAX_PARKING_SLOTS}대
+                    </span>
+                  </div>
+
+                  <div class="space-y-2">
+                    ${list.map(r => {
+                      const emp = employeeById(r.employeeId);
+                      return `
+                        <div class="bg-white p-3 rounded-lg border border-slate-200 flex items-center justify-between text-xs">
+                          <div class="flex items-center gap-2.5">
+                            <span class="w-3 h-3 rounded-full flex-shrink-0" style="background:${emp.carColor}"></span>
+                            <span class="font-bold text-slate-800">${emp.name} (${emp.team})</span>
+                          </div>
+
+                          <div class="flex gap-1.5 items-center">
+                            <span class="text-green-600 font-bold px-2 py-0.5 bg-green-50 rounded">예약됨</span>
+                            <button data-reject-id="${r.id}" class="text-slate-400 hover:text-red-600 p-1" title="삭제"><i data-lucide="x" class="w-4 h-4"></i></button>
+                          </div>
+                        </div>
+                      `;
+                    }).join('')}
+                  </div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+        `}
+      </div>
+    `;
+  }
+
+  function renderBottomNav() {
+    const u = state.currentUser;
+    return `
+      <nav class="fixed bottom-0 max-w-md w-full bg-white border-t border-slate-200 flex justify-around py-2.5 z-10">
+        <button id="nav-cal" class="flex flex-col items-center gap-0.5 text-xs font-medium ${state.view==='calendar'?'text-blue-600 font-bold':'text-slate-400 hover:text-slate-600'}">
+          <i data-lucide="calendar" class="w-5 h-5"></i>
+          <span>달력 예약</span>
+        </button>
+        <button id="nav-my" class="flex flex-col items-center gap-0.5 text-xs font-medium ${state.view==='my'?'text-blue-600 font-bold':'text-slate-400 hover:text-slate-600'}">
+          <i data-lucide="car" class="w-5 h-5"></i>
+          <span>내 예약</span>
+        </button>
+        ${u.isAdmin ? `
+          <button id="nav-admin" class="flex flex-col items-center gap-0.5 text-xs font-medium ${state.view==='admin'?'text-blue-600 font-bold':'text-slate-400 hover:text-slate-600'}">
+            <i data-lucide="shield-check" class="w-5 h-5"></i>
+            <span>관리자</span>
+          </button>
+        ` : ''}
+      </nav>
+    `;
+  }
+
+  function renderModal() {
+    const u = employeeById(state.currentUser.id);
+    const dateKey = state.modalDate;
+
+    const dayReservations = state.reservations
+      .filter(r => r.date === dateKey && r.status !== 'rejected')
+      .sort((a, b) => a.createdAt - b.createdAt);
+
+    const slots = [0, 1, 2, 3].map(index => dayReservations[index] || null);
+
+    return `
+      <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl flex flex-col justify-between">
+          <div>
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-bold text-slate-900 text-base">${dateKey} 예약 현황</h3>
+              <button id="modal-close" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <div class="bg-slate-50 rounded-xl p-3 mb-4 border border-slate-200">
+              <div class="flex justify-between items-center mb-2">
+                <span class="text-xs font-bold text-slate-700">주차 현황</span>
+                <span class="text-[11px] font-bold ${dayReservations.length >= MAX_PARKING_SLOTS ? 'text-red-600' : 'text-blue-600'}">
+                  ${dayReservations.length} / ${MAX_PARKING_SLOTS}대
+                </span>
+              </div>
+              
+              <div class="grid grid-cols-2 gap-2">
+                ${slots.map((r, idx) => {
+                  if (r) {
+                    const emp = employeeById(r.employeeId);
+                    const isMe = r.employeeId === u.id;
+                    return `
+                      <div class="flex items-center justify-between text-xs bg-white px-2.5 py-2 rounded-lg border border-slate-200 shadow-sm">
+                        <div class="flex items-center gap-1.5 truncate">
+                          <span class="w-2.5 h-2.5 rounded-full flex-shrink-0" style="background:${emp.carColor}"></span>
+                          <span class="font-semibold text-slate-800 truncate">${emp.name} (${emp.team})</span>
+                        </div>
+                        ${isMe ? `<span class="text-[9px] bg-blue-100 text-blue-700 px-1 py-0.2 rounded font-bold">나</span>` : ''}
+                      </div>
+                    `;
+                  } else {
+                    return `
+                      <div class="flex items-center justify-center text-[11px] text-slate-400 bg-slate-100/70 border border-dashed border-slate-200 py-2 rounded-lg font-medium">
+                        ${idx + 1}번 비어있음
+                      </div>
+                    `;
+                  }
+                }).join('')}
+              </div>
+            </div>
+
+            <div class="space-y-3 text-xs border-t border-slate-100 pt-3">
+              <div>
+                <label class="block font-semibold text-slate-700 mb-1">예약 대수 변경</label>
+                <select id="modal-count" class="w-full px-3 py-2.5 border border-slate-300 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 bg-white font-medium text-sm">
+                  <option value="1" ${state.modalCount===1?'selected':''}>1대</option>
+                  <option value="2" ${state.modalCount===2?'selected':''}>2대</option>
+                  <option value="3" ${state.modalCount===3?'selected':''}>3대</option>
+                  <option value="4" ${state.modalCount===4?'selected':''}>4대</option>
+                </select>
+              </div>
+
+              ${state.modalError ? `<p class="text-red-500 font-medium">${state.modalError}</p>` : ''}
+            </div>
+          </div>
+
+          <div class="flex gap-2 mt-5">
+            <button id="modal-cancel-btn" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition text-xs">닫기</button>
+            <button id="modal-submit-btn" class="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition shadow-sm text-xs">적용</button>
+          </div>
         </div>
+      </div>
+    `;
+  }
 
-        <!-- 예약 버튼 -->
-        <div class="space-y-2 mb-6">
-            <button id="reserve-btn" 
-                    onclick="handleSingleClick()" 
-                    class="w-full bg-emerald-600 text-white py-3 rounded-lg font-semibold hover:bg-emerald-700 active:scale-95 transition-transform">
-                주차 예약 / 취소
-            </button>
+  function renderColorPickerModal() {
+    const u = employeeById(state.currentUser.id);
+    return `
+      <div class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-5 shadow-xl max-h-[90vh] flex flex-col justify-between">
+          <div>
+            <div class="flex justify-between items-center mb-3">
+              <h3 class="font-bold text-slate-900 text-base">색상 변경</h3>
+              <button id="color-modal-close" class="text-slate-400 hover:text-slate-600"><i data-lucide="x" class="w-5 h-5"></i></button>
+            </div>
+
+            <div class="space-y-4">
+              <p class="text-xs text-slate-500">표시할 대표 색상을 선택하세요.</p>
+
+              <div class="grid grid-cols-6 gap-2.5 p-1">
+                ${COLOR_PRESETS.map(hex => `
+                  <button data-select-color="${hex}" class="aspect-square rounded-xl border-2 transition-transform active:scale-90 flex items-center justify-center ${u.carColor.toLowerCase()===hex.toLowerCase()?'border-slate-900 ring-2 ring-slate-400':'border-transparent'}" style="background:${hex}">
+                    ${u.carColor.toLowerCase()===hex.toLowerCase() ? `<i data-lucide="check" class="w-3.5 h-3.5 text-white drop-shadow"></i>` : ''}
+                  </button>
+                `).join('')}
+              </div>
+            </div>
+          </div>
+
+          <div class="flex gap-2 mt-6">
+            <button id="color-modal-cancel" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-xl transition text-xs">닫기</button>
+          </div>
         </div>
+      </div>
+    `;
+  }
 
-        <!-- 해당 날짜 명단 목록 -->
-        <div>
-            <h3 class="text-sm font-bold text-gray-700 mb-2">예약자 명단</h3>
-            <ul id="reservation-list" class="divide-y border rounded-lg overflow-hidden text-sm max-h-48 overflow-y-auto">
-                <li class="p-3 text-center text-gray-400">예약 내역이 없습니다.</li>
-            </ul>
+  function renderAdminNoticeModal() {
+    return `
+      <div class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-xs w-full p-5 shadow-xl text-center">
+          <div class="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-3">
+            <i data-lucide="alert-circle" class="w-6 h-6"></i>
+          </div>
+          <h3 class="font-bold text-slate-900 text-base mb-1">만차 안내</h3>
+          <p class="text-xs text-slate-600 leading-relaxed mb-4">
+            <span class="font-bold text-slate-800">${state.adminNoticeDate}</span> 주차 공간(4대)이 가득 찼습니다.<br><br>
+            추가 주차 문의는 <b class="text-blue-600">관리자에게 문의</b>해 주세요.
+          </p>
+          <button id="btn-close-admin-notice" class="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-semibold rounded-xl text-xs transition">
+            확인
+          </button>
         </div>
-    </div>
+      </div>
+    `;
+  }
 
-    <script>
-        const firebaseConfig = {
-            apiKey: "AIzaSyAxSvaqEi9FwI83hUtJ4TlFmcWPTDD67g0",
-            authDomain: "rascaparking.firebaseapp.com",
-            databaseURL: "https://rascaparking-default-rtdb.firebaseio.com",
-            projectId: "rascaparking",
-            storageBucket: "rascaparking.firebasestorage.app",
-            messagingSenderId: "11042989524",
-            appId: "1:11042989524:web:60038de6d440812ec42241"
-        };
+  function showAdminNotice(dateKey) {
+    state.adminNoticeDate = dateKey;
+    state.showAdminNoticeModal = true;
+    render();
+  }
 
-        let database = null;
-        let currentUser = null;
-        let selectedDate = "";
-        let parkingListener = null;
+  // 1대 토글 예약/취소
+  async function handleSingleClickToggle(dateKey) {
+    if (state.isProcessing) return;
+    state.isProcessing = true;
 
-        try {
-            firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-        } catch (e) {
-            console.error("Firebase 초기화 오류:", e);
+    try {
+      if (dateKey < todayKey()) {
+        showToast("지난 날짜는 예약할 수 없습니다.");
+        state.isProcessing = false;
+        return;
+      }
+
+      const u = state.currentUser;
+      const dayReservations = state.reservations.filter(r => r.date === dateKey && r.status !== 'rejected');
+      const myDayReservations = dayReservations.filter(r => r.employeeId === u.id);
+
+      if (myDayReservations.length > 0) {
+        // 취소
+        for (const res of myDayReservations) {
+          await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', res.id));
+        }
+        showToast(`${dateKey} 예약 취소`);
+      } else {
+        // 만차 체크
+        const approvedCount = dayReservations.filter(r => r.status === 'approved').length;
+        if (approvedCount >= MAX_PARKING_SLOTS) {
+          showAdminNotice(dateKey);
+          state.isProcessing = false;
+          return;
         }
 
-        function getTodayString() {
-            const today = new Date();
-            const year = today.getFullYear();
-            const month = String(today.getMonth() + 1).padStart(2, '0');
-            const day = String(today.getDate()).padStart(2, '0');
-            return `${year}-${month}-${day}`;
+        const resId = `${dateKey}_${u.id}_${Date.now()}`;
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', resId), {
+          date: dateKey,
+          employeeId: u.id,
+          status: 'approved',
+          createdAt: Date.now()
+        });
+
+        showToast(`✅ ${dateKey} 예약 완료`);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      state.isProcessing = false;
+    }
+  }
+
+  // 꾹 누르기
+  function handleLongPress(dateKey) {
+    if (dateKey < todayKey()) return;
+    const u = state.currentUser;
+    const myDayReservations = state.reservations.filter(r => r.date === dateKey && r.employeeId === u.id && r.status !== 'rejected');
+    
+    state.modalDate = dateKey;
+    state.modalCount = myDayReservations.length > 0 ? myDayReservations.length : 1;
+    state.modalError = "";
+    render();
+  }
+
+  // 모달 적용 (다대수 예약 처리)
+  async function handleModalSubmit() {
+    if (state.isProcessing) return;
+    state.isProcessing = true;
+
+    try {
+      const u = state.currentUser;
+      const dateKey = state.modalDate;
+      const targetCount = parseInt(state.modalCount, 10);
+
+      const dayReservations = state.reservations.filter(r => r.date === dateKey && r.status !== 'rejected');
+      const myDayReservations = dayReservations.filter(r => r.employeeId === u.id);
+      const otherReservations = dayReservations.filter(r => r.employeeId !== u.id);
+
+      const availableSlots = MAX_PARKING_SLOTS - otherReservations.length;
+
+      if (targetCount > availableSlots) {
+        state.modalError = `남은 주차 자리가 부족합니다. (최대 ${availableSlots}대 가능)`;
+        state.isProcessing = false;
+        render();
+        return;
+      }
+
+      // 기존 나의 해당 날짜 예약 삭제 후 개수만큼 재등록
+      for (const res of myDayReservations) {
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', res.id));
+      }
+
+      for (let i = 0; i < targetCount; i++) {
+        const resId = `${dateKey}_${u.id}_${Date.now()}_${i}`;
+        await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', resId), {
+          date: dateKey,
+          employeeId: u.id,
+          status: 'approved',
+          createdAt: Date.now() + i
+        });
+      }
+
+      showToast(`✅ ${dateKey} (${targetCount}대) 예약 완료`);
+      state.modalDate = null;
+    } catch (err) {
+      console.error(err);
+    } finally {
+      state.isProcessing = false;
+      render();
+    }
+  }
+
+  // 색상 저장 처리
+  async function saveUserColor(newColor) {
+    const u = state.currentUser;
+    u.carColor = newColor;
+
+    const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'user_profiles', u.id);
+    await setDoc(userDoc, {
+      carColor: newColor,
+      updatedAt: Date.now()
+    }, { merge: true });
+
+    // 로컬스토리지 내 정보도 갱신
+    localStorage.setItem("parking_app_saved_user", JSON.stringify(u));
+
+    showToast("색상이 변경되었습니다.");
+    state.showColorPicker = false;
+    render();
+  }
+
+  // 사용자 신규 접속 또는 세션 생성
+  async function handleUserLogin(name, team) {
+    const cleanName = name.trim();
+    if (!cleanName) {
+      state.loginError = "이름을 입력해 주세요.";
+      render();
+      return;
+    }
+
+    const userKey = `user_${cleanName.replace(/\s+/g, '')}_${team}`;
+    const defaultColor = COLOR_PRESETS[Math.floor(Math.random() * COLOR_PRESETS.length)];
+    
+    const existingProfile = state.userProfiles[userKey];
+    const carColor = existingProfile?.carColor || defaultColor;
+
+    const userObj = {
+      id: userKey,
+      name: cleanName,
+      team: team,
+      carColor: carColor,
+      isAdmin: team === "SUP" || cleanName.includes("관리자")
+    };
+
+    // DB 프로필 등록/업데이트
+    const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'user_profiles', userKey);
+    await setDoc(userDoc, {
+      name: cleanName,
+      team: team,
+      carColor: carColor,
+      updatedAt: Date.now()
+    }, { merge: true });
+
+    // 브라우저 기기에 저장하여 자동 로그인 활성화
+    localStorage.setItem("parking_app_saved_user", JSON.stringify(userObj));
+
+    state.currentUser = userObj;
+    state.loginError = "";
+    render();
+  }
+
+  // 이벤트 연동
+  function attachHandlers() {
+    const $ = (id) => document.getElementById(id);
+
+    if ($("input-name")) {
+      $("input-name").oninput = (e) => { state.inputName = e.target.value; };
+      $("input-name").onkeypress = (e) => {
+        if (e.key === 'Enter') handleUserLogin(state.inputName, state.inputTeam);
+      };
+    }
+    if ($("input-team")) $("input-team").onchange = (e) => { state.inputTeam = e.target.value; };
+
+    if ($("btn-login")) {
+      $("btn-login").onclick = () => {
+        handleUserLogin(state.inputName, state.inputTeam);
+      };
+    }
+
+    // 로그아웃 (기기 자동 로그인 데이터 완전 삭제)
+    if ($("btn-logout")) {
+      $("btn-logout").onclick = () => {
+        localStorage.removeItem("parking_app_saved_user");
+        state.currentUser = null;
+        state.inputName = "";
+        render();
+      };
+    }
+
+    // 색상 변경 창 열기
+    if ($("btn-open-color")) $("btn-open-color").onclick = () => { state.showColorPicker = true; render(); };
+    if ($("btn-change-color-card")) $("btn-change-color-card").onclick = () => { state.showColorPicker = true; render(); };
+
+    // 색상 변경 모달 이벤트
+    if ($("color-modal-close")) $("color-modal-close").onclick = () => { state.showColorPicker = false; render(); };
+    if ($("color-modal-cancel")) $("color-modal-cancel").onclick = () => { state.showColorPicker = false; render(); };
+
+    document.querySelectorAll("[data-select-color]").forEach(btn => {
+      btn.onclick = () => {
+        const color = btn.getAttribute("data-select-color");
+        saveUserColor(color);
+      };
+    });
+
+    // 만차 안내 모달 닫기
+    if ($("btn-close-admin-notice")) {
+      $("btn-close-admin-notice").onclick = () => {
+        state.showAdminNoticeModal = false;
+        render();
+      };
+    }
+
+    // 네비게이션
+    if ($("nav-cal")) $("nav-cal").onclick = () => { state.view = "calendar"; render(); };
+    if ($("nav-my")) $("nav-my").onclick = () => { state.view = "my"; render(); };
+    if ($("nav-admin")) $("nav-admin").onclick = () => { state.view = "admin"; render(); };
+
+    // 월 이동
+    if ($("prev-month")) {
+      $("prev-month").onclick = () => {
+        state.viewMonth--;
+        if (state.viewMonth < 0) {
+          state.viewMonth = 11;
+          state.viewYear--;
         }
-
-        function login() {
-            const name = document.getElementById('user-name').value.trim();
-            const team = document.getElementById('user-team').value;
-
-            if (!name) return alert('이름을 입력해 주세요.');
-            if (!team) return alert('팀명을 선택해 주세요.');
-
-            currentUser = { name, team };
-            localStorage.setItem('park_user', JSON.stringify(currentUser));
-            showApp();
+        render();
+      };
+    }
+    if ($("next-month")) {
+      $("next-month").onclick = () => {
+        state.viewMonth++;
+        if (state.viewMonth > 11) {
+          state.viewMonth = 0;
+          state.viewYear++;
         }
+        render();
+      };
+    }
 
-        function logout() {
-            localStorage.removeItem('park_user');
-            currentUser = null;
-            document.getElementById('login-card').classList.remove('hidden');
-            document.getElementById('app-card').classList.add('hidden');
+    // 달력 셀 터치/클릭 (클릭/long-press 감지)
+    document.querySelectorAll("[data-date]").forEach(cell => {
+      const dateKey = cell.getAttribute("data-date");
+      let timer = null;
+      let isLongPress = false;
+
+      const startPress = () => {
+        isLongPress = false;
+        timer = setTimeout(() => {
+          isLongPress = true;
+          handleLongPress(dateKey);
+        }, 500);
+      };
+
+      const endPress = () => {
+        clearTimeout(timer);
+      };
+
+      cell.onmousedown = startPress;
+      cell.onmouseup = () => {
+        endPress();
+        if (!isLongPress) handleSingleClickToggle(dateKey);
+      };
+      cell.onmouseleave = endPress;
+
+      cell.ontouchstart = startPress;
+      cell.ontouchend = (e) => {
+        endPress();
+        if (!isLongPress) {
+          e.preventDefault();
+          handleSingleClickToggle(dateKey);
         }
+      };
+    });
 
-        function showApp() {
-            document.getElementById('login-card').classList.add('hidden');
-            document.getElementById('app-card').classList.remove('hidden');
-            document.getElementById('display-user').innerText = currentUser.name;
-            document.getElementById('display-team').innerText = `[${currentUser.team}]`;
-            
-            if (!selectedDate) {
-                selectedDate = getTodayString();
-            }
-            document.getElementById('target-date').value = selectedDate;
-            
-            listenToParkingStatus();
-        }
+    // 내 예약 목록 취소 버튼
+    document.querySelectorAll("[data-cancel-id]").forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute("data-cancel-id");
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', id));
+        showToast("예약이 취소되었습니다.");
+      };
+    });
 
-        function onDateChange() {
-            selectedDate = document.getElementById('target-date').value;
-            listenToParkingStatus();
-        }
+    // 관리자 거절/삭제 버튼
+    document.querySelectorAll("[data-reject-id]").forEach(btn => {
+      btn.onclick = async () => {
+        const id = btn.getAttribute("data-reject-id");
+        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'reservations', id));
+        showToast("예약이 삭제되었습니다.");
+      };
+    });
 
-        function listenToParkingStatus() {
-            const statusCard = document.getElementById('parking-status-card');
-            const statusText = document.getElementById('status-text');
-            const dateText = document.getElementById('selected-date-text');
-            const listEl = document.getElementById('reservation-list');
+    // 모달 이벤트
+    if ($("modal-close")) $("modal-close").onclick = () => { state.modalDate = null; render(); };
+    if ($("modal-cancel-btn")) $("modal-cancel-btn").onclick = () => { state.modalDate = null; render(); };
+    if ($("modal-count")) $("modal-count").onchange = (e) => { state.modalCount = e.target.value; };
+    if ($("modal-submit-btn")) $("modal-submit-btn").onclick = handleModalSubmit;
+  }
 
-            dateText.innerText = selectedDate;
-
-            if (!database) {
-                statusText.innerText = "연결 오류";
-                return;
-            }
-
-            if (parkingListener) {
-                parkingListener.off();
-            }
-
-            parkingListener = database.ref('parking/' + selectedDate);
-
-            parkingListener.on('value', (snapshot) => {
-                const data = snapshot.val() || {};
-                const keys = Object.keys(data);
-                const count = keys.length;
-                const maxCapacity = 10;
-
-                if (count >= maxCapacity) {
-                    statusCard.classList.add('full-park');
-                    statusText.innerText = `만차 (${count}/${maxCapacity})`;
-                } else {
-                    statusCard.classList.remove('full-park');
-                    statusText.innerText = `여유 (${count}/${maxCapacity})`;
-                }
-
-                listEl.innerHTML = '';
-                if (count === 0) {
-                    listEl.innerHTML = '<li class="p-3 text-center text-gray-400">예약 내역이 없습니다.</li>';
-                } else {
-                    keys.forEach((key) => {
-                        const item = data[key];
-                        const li = document.createElement('li');
-                        li.className = 'p-3 flex justify-between items-center bg-white border-b last:border-b-0';
-                        li.innerHTML = `
-                            <span class="font-medium text-gray-800">${item.name}</span>
-                            <span class="text-xs bg-gray-200 px-2 py-1 rounded font-semibold text-gray-600">${item.team}</span>
-                        `;
-                        listEl.appendChild(li);
-                    });
-                }
-            }, (error) => {
-                console.error("데이터 읽기 오류:", error);
-                statusText.innerText = "DB 연결 확인 필요";
-            });
-        }
-
-        function handleSingleClick() {
-            if (!database) return alert("데이터베이스 연결에 실패했습니다.");
-            if (!selectedDate) return alert("날짜를 선택해 주세요.");
-
-            const userKey = `${currentUser.team}_${currentUser.name}`;
-            const userRef = database.ref(`parking/${selectedDate}/${userKey}`);
-
-            userRef.once('value').then((snapshot) => {
-                if (snapshot.exists()) {
-                    userRef.remove();
-                    alert(`${selectedDate} 예약이 취소되었습니다.`);
-                } else {
-                    userRef.set({
-                        name: currentUser.name,
-                        team: currentUser.team,
-                        timestamp: Date.now()
-                    });
-                    alert(`${selectedDate} 주차 예약이 완료되었습니다.`);
-                }
-            });
-        }
-
-        window.onload = () => {
-            selectedDate = getTodayString();
-            const saved = localStorage.getItem('park_user');
-            if (saved) {
-                currentUser = JSON.parse(saved);
-                showApp();
-            }
-        };
-    </script>
+  // 실행 시작
+  initAuthAndData();
+</script>
 </body>
 </html>
