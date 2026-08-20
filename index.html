@@ -445,9 +445,13 @@
                 const updates = [];
                 Object.values(reservations).forEach(dayList => {
                     dayList.forEach(res => {
-                        if (res.userId === window.firebaseAuth.currentUser.uid) {
+                        // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
+                        if (res.name === window.currentUser.name && res.dept === window.currentUser.dept) {
                             const resRef = window.doc(window.firebaseDb, 'reservations', res.id);
-                            updates.push(window.updateDoc(resRef, { color: newColor }));
+                            updates.push(window.updateDoc(resRef, { 
+                                color: newColor,
+                                userId: window.firebaseAuth.currentUser.uid // 갱신된 UID 업데이트
+                            }));
                         }
                     });
                 });
@@ -511,7 +515,8 @@
                 
                 const dayReservations = reservations[dateKey] || [];
                 const count = dayReservations.length;
-                const isMyReserved = window.currentUser && dayReservations.some(r => window.firebaseAuth.currentUser && r.userId === window.firebaseAuth.currentUser.uid);
+                // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
+                const isMyReserved = window.currentUser && dayReservations.some(r => r.name === window.currentUser.name && r.dept === window.currentUser.dept);
 
                 const cell = document.createElement('div');
                 
@@ -573,7 +578,8 @@
             
             let myLastRes = null;
             for(let i = dayList.length -1; i >= 0; i--) {
-                if(dayList[i].userId === window.firebaseAuth.currentUser.uid) {
+                // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
+                if(dayList[i].name === window.currentUser.name && dayList[i].dept === window.currentUser.dept) {
                     myLastRes = dayList[i];
                     break;
                 }
@@ -621,7 +627,8 @@
                 listContainer.innerHTML = `<div class="flex h-full items-center justify-center text-slate-500 py-6">아직 예약된 차량이 없습니다.</div>`;
             } else {
                 listContainer.innerHTML = dayList.map((r, idx) => {
-                    const isMine = window.firebaseAuth.currentUser && r.userId === window.firebaseAuth.currentUser.uid;
+                    // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
+                    const isMine = window.currentUser && r.name === window.currentUser.name && r.dept === window.currentUser.dept;
                     const cancelBtnHtml = isMine ? 
                         `<button onclick="cancelSpecificReservation('${r.id}')" class="ml-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/40 px-2 py-1 rounded text-[10px] transition">X 취소</button>` : '';
 
@@ -700,7 +707,8 @@
             let myItems = [];
             Object.keys(reservations).forEach(dateKey => {
                 reservations[dateKey].forEach(r => {
-                    if (r.userId === window.firebaseAuth.currentUser.uid) {
+                    // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
+                    if (r.name === window.currentUser.name && r.dept === window.currentUser.dept) {
                         myItems.push({ dateKey, id: r.id, createdAt: r.createdAt });
                     }
                 });
