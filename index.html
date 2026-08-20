@@ -1,245 +1,735 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="ko" class="h-full bg-slate-900 text-slate-100">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>사내 주차 예약 시스템</title>
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- external modal script에 defer 속성을 추가하여 DOM 로드 전 실행 오류 방지 -->
-  <script src="share-modal.js" defer></script>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사내 주차 예약 시스템</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: { sans: ['Noto Sans KR', 'sans-serif'] },
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans KR', sans-serif; }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #1e293b; }
+        ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
+    </style>
 </head>
-<body class="bg-slate-100 min-h-screen text-slate-800">
-  <div id="app"></div>
+<body class="h-full overflow-hidden flex flex-col bg-slate-950 text-slate-100 relative">
 
-  <!-- Firebase SDK Modules -->
-  <script type="module">
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js";
-    import { 
-      getFirestore, collection, doc, setDoc, deleteDoc, onSnapshot 
-    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js";
-    import { 
-      getAuth, signInAnonymously, signInWithCustomToken 
-    } from "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js";
+    <!-- 초기 로딩 스크린 (자동 로그인 확인용) -->
+    <div id="loadingScreen" class="fixed inset-0 bg-slate-950 z-[100] flex flex-col items-center justify-center transition-opacity duration-300">
+        <i class="fa-solid fa-spinner fa-spin text-blue-500 text-4xl mb-4"></i>
+        <p class="text-white font-medium text-sm">시스템에 연결 중입니다...</p>
+    </div>
 
-    // Firebase 설정 (실제 프로젝트 설정값 유지)
-    const firebaseConfig = typeof __firebase_config !== 'undefined' 
-      ? __firebase_config 
-      : {
-          apiKey: "YOUR_API_KEY",
-          authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-          projectId: "YOUR_PROJECT_ID",
-          storageBucket: "YOUR_PROJECT_ID.appspot.com",
-          messagingSenderId: "YOUR_SENDER_ID",
-          appId: "YOUR_APP_ID"
+    <!-- 로그인 모달 (첫 화면) -->
+    <div id="loginModal" class="fixed inset-0 bg-slate-950/90 backdrop-blur-md z-50 hidden items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md p-8 shadow-2xl space-y-6">
+            <div class="text-center space-y-2">
+                <div class="w-16 h-16 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center text-white text-2xl shadow-lg shadow-blue-500/30 mx-auto">
+                    <i class="fa-solid fa-car"></i>
+                </div>
+                <h1 class="text-xl font-bold text-white">주차 예약 시스템</h1>
+                <p class="text-xs text-slate-400">사내 주차 예약 시스템 이용을 위해 정보를 입력해주세요.</p>
+            </div>
+
+            <form id="loginForm" onsubmit="handleLogin(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">이름</label>
+                    <input type="text" id="loginName" required placeholder="예: 홍길동" 
+                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition">
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5">소속 부서</label>
+                    <select id="loginDept" required 
+                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition">
+                        <option value="" disabled selected>부서를 선택하세요</option>
+                        <option value="SUP">SUP</option>
+                        <option value="2D">2D</option>
+                        <option value="3D">3D</option>
+                        <option value="MP">MP</option>
+                        <option value="PM">PM</option>
+                        <option value="ETC">ETC</option>
+                    </select>
+                </div>
+
+                <button type="submit" id="loginSubmitBtn" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-600/30 transition text-sm flex justify-center items-center gap-2">
+                    <span>입장하기</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- 메인 어플리케이션 레이아웃 -->
+    <div id="mainApp" class="flex-1 flex flex-col md:flex-row h-full overflow-hidden hidden">
+        <aside class="w-full md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 z-20">
+            <div>
+                <!-- 네비게이션 메뉴 (로고, 텍스트 상단 여백 추가) -->
+                <nav class="p-4 space-y-1.5 mt-2">
+                    <a href="#" onclick="switchTab('calendar')" class="nav-item-calendar flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/20">
+                        <i class="fa-solid fa-calendar-alt w-5 text-center"></i>
+                        주차 예약
+                    </a>
+                    <a href="#" onclick="switchTab('status')" class="nav-item-status flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all">
+                        <i class="fa-solid fa-car w-5 text-center"></i>
+                        내 예약 현황
+                    </a>
+                </nav>
+            </div>
+
+            <!-- 사용자 정보 및 프로필 영역 -->
+            <div class="p-4 border-t border-slate-800 bg-slate-900/50 space-y-3">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3 min-w-0">
+                        <div id="userColorIndicator" class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-md cursor-pointer relative group" title="클릭하여 색상 변경" onclick="togglePalettePopup()">
+                            -
+                        </div>
+                        <div class="flex-1 min-w-0 cursor-pointer" onclick="togglePalettePopup()" title="클릭하여 색상 변경">
+                            <p class="text-xs font-semibold text-white truncate" id="currentUserNameDisplay">로딩중...</p>
+                            <p class="text-[10px] text-slate-400 truncate flex items-center gap-1">
+                                <span>내 색상 변경</span>
+                                <span id="currentColorCodeText" class="w-2 h-2 rounded-full inline-block"></span>
+                            </p>
+                        </div>
+                    </div>
+                    <button onclick="logout()" title="로그아웃 (다른 계정 접속)" class="text-slate-400 hover:text-rose-400 p-2 transition">
+                        <i class="fa-solid fa-right-from-bracket"></i>
+                    </button>
+                </div>
+            </div>
+        </aside>
+
+        <main class="flex-1 overflow-y-auto flex flex-col h-full bg-slate-950 relative">
+            
+            <!-- Tab 1: Calendar View (불필요한 헤더 삭제됨) -->
+            <div id="tab-calendar" class="tab-content p-4 sm:p-6 space-y-4 sm:space-y-6 mt-2">
+                <!-- 달력 컨트롤러 및 안내 -->
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900 border border-slate-800">
+                    <div class="flex items-center gap-4">
+                        <button onclick="changeMonth(-1)" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center border border-slate-700 transition">
+                            <i class="fa-solid fa-chevron-left"></i>
+                        </button>
+                        <h3 id="calendarMonthTitle" class="text-lg font-bold text-white tracking-wide">2026년 8월</h3>
+                        <button onclick="changeMonth(1)" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center border border-slate-700 transition">
+                            <i class="fa-solid fa-chevron-right"></i>
+                        </button>
+                    </div>
+
+                    <div class="flex items-center gap-4 text-xs font-medium">
+                        <div class="flex items-center gap-1.5 text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                            <i class="fa-solid fa-circle-info text-blue-400"></i>
+                            클릭: 예약/취소 | 꾹 누르기: 다중 예약/예약현황
+                        </div>
+                    </div>
+                </div>
+
+                <div class="p-4 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
+                    <div class="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs font-bold text-slate-400 mb-3">
+                        <span class="text-rose-400">일</span>
+                        <span>월</span>
+                        <span>화</span>
+                        <span>수</span>
+                        <span>목</span>
+                        <span>금</span>
+                        <span class="text-rose-400">토</span>
+                    </div>
+
+                    <div id="calendarGrid" class="grid grid-cols-7 gap-1 sm:gap-2">
+                        <!-- Dynamic Days -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab 2: My Status View -->
+            <div id="tab-status" class="tab-content p-4 sm:p-6 space-y-6 mt-2 hidden">
+                <div class="max-w-4xl space-y-6">
+                    <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
+                        <h4 class="text-sm font-bold text-white mb-2">내가 예약한 주차 일자 목록</h4>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left text-xs">
+                                <thead class="bg-slate-800/80 text-slate-400 uppercase font-medium">
+                                    <tr>
+                                        <th class="p-3 rounded-l-lg">날짜</th>
+                                        <th class="p-3">예약자</th>
+                                        <th class="p-3">부서</th>
+                                        <th class="p-3 rounded-r-lg text-right">관리</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="myReservationsTable" class="divide-y divide-slate-800 text-slate-300">
+                                    <!-- Dynamic Rows -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 색상 선택 모달 -->
+    <div id="colorPaletteModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm p-6 shadow-2xl space-y-5">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="text-base font-bold text-white">나의 예약 색상 선택</h3>
+                    <p class="text-xs text-slate-400">캘린더에 표시될 20가지 컬러 중 선택하세요.</p>
+                </div>
+                <button onclick="closeColorPaletteModal()" class="text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div id="paletteGrid" class="grid grid-cols-5 gap-3 py-2"></div>
+            <button onclick="closeColorPaletteModal()" class="w-full bg-slate-800 hover:bg-slate-700 text-white font-bold py-2.5 rounded-xl text-xs transition">
+                확인
+            </button>
+        </div>
+    </div>
+
+    <!-- 상세 보기(다중 예약) 모달 -->
+    <div id="dayDetailModal" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+            <button onclick="closeDayModal()" class="absolute top-4 right-4 text-slate-400 hover:text-white p-2">
+                <i class="fa-solid fa-xmark text-lg"></i>
+            </button>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="w-12 h-12 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/30 font-bold text-lg flex items-center justify-center shrink-0">
+                    <i class="fa-solid fa-car"></i>
+                </div>
+                <div>
+                    <h3 id="modalDateTitle" class="text-base font-bold text-white">2026년 8월 20일</h3>
+                    <p id="modalDateSubtitle" class="text-xs text-slate-400">최대 4대 중 2대 예약 완료</p>
+                </div>
+            </div>
+
+            <div class="space-y-2 border-t border-b border-slate-800 py-4 my-4 text-xs min-h-[100px]" id="modalReservationList">
+                <!-- 예약자 리스트 -->
+            </div>
+
+            <div class="flex gap-2 justify-end">
+                <button onclick="closeDayModal()" class="px-4 py-3 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-medium text-xs">닫기</button>
+                <button onclick="addCarFromModal()" id="modalActionBtn" class="flex-1 px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition">차량 추가 예약하기</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-slate-800 text-white text-xs font-semibold px-4 py-3 rounded-xl border border-slate-700 shadow-2xl opacity-0 pointer-events-none transition-all duration-300 z-[100] flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-emerald-400 text-sm"></i>
+        <span id="toastMsg">처리되었습니다.</span>
+    </div>
+
+    <!-- Firebase SDK & Module Script -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, deleteDoc, updateDoc, collection, addDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyAxSvaqEi9FwI83hUtJ4TlFmcWPTDD67g0",
+            authDomain: "rascaparking.firebaseapp.com",
+            projectId: "rascaparking",
+            storageBucket: "rascaparking.firebasestorage.app",
+            messagingSenderId: "11042989524",
+            appId: "1:11042989524:web:60038de6d440812ec42241",
+            measurementId: "G-M3E6TL4Q9E"
         };
 
-    const app = initializeApp(firebaseConfig);
-    const db = getFirestore(app);
-    const auth = getAuth(app);
-    const appId = "rasca-parking-v1";
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
 
-    const COLOR_PRESETS = [
-      "#ef4444", "#f97316", "#f59e0b", "#10b981", 
-      "#06b6d4", "#3b82f6", "#6366f1", "#8b5cf6", "#ec4899"
-    ];
+        window.firebaseDb = db;
+        window.firebaseAuth = auth;
+        window.signInAnonymously = signInAnonymously;
+        window.signOut = signOut;
+        window.doc = doc;
+        window.getDoc = getDoc;
+        window.setDoc = setDoc;
+        window.deleteDoc = deleteDoc;
+        window.updateDoc = updateDoc;
+        window.collection = collection;
+        window.addDoc = addDoc;
+        window.onSnapshot = onSnapshot;
 
-    // 애플리케이션 상태
-    const state = {
-      currentUser: null,
-      reservations: [],
-      userProfiles: {},
-      selectedDate: new Date().toISOString().split('T')[0],
-      isLoading: true,
-      loginError: ""
-    };
+        window.initFirebaseApp = function() {
+            onAuthStateChanged(auth, async (user) => {
+                const loader = document.getElementById('loadingScreen');
+                
+                if (user) {
+                    try {
+                        const profileRef = window.doc(window.firebaseDb, 'users', user.uid);
+                        const profileSnap = await window.getDoc(profileRef);
+                        
+                        if (profileSnap.exists()) {
+                            window.currentUser = profileSnap.data();
+                            window.updateUserUI();
+                            window.showMainApp();
+                            window.startReservationsListener();
+                        } else {
+                            window.showLoginModal();
+                        }
+                    } catch(e) {
+                        console.error("Profile Fetch Error:", e);
+                        window.showLoginModal();
+                    }
+                } else {
+                    window.showLoginModal();
+                }
 
-    // 앱 초기화 및 Auth 방어 로직
-    async function initAuthAndData() {
-      // 로컬스토리지 복원
-      const savedUserStr = localStorage.getItem("parking_app_saved_user");
-      if (savedUserStr) {
-        try {
-          state.currentUser = JSON.parse(savedUserStr);
-        } catch (e) {
-          console.warn("자동 로그인 로드 실패:", e);
+                // 로딩 화면 숨김
+                loader.classList.add('opacity-0');
+                setTimeout(() => loader.classList.add('hidden'), 300);
+            });
+        };
+
+        window.onload = () => {
+            window.initFirebaseApp();
+            window.renderColorPalettePicker();
+            window.renderCalendar();
+        };
+    </script>
+
+    <!-- UI & Application Logic Script -->
+    <script>
+        let currentDate = new Date(); 
+        let currentUser = null; 
+
+        // 주요 공휴일 데이터
+        const holidays = {
+            "2026-01-01": "신정", "2026-02-16": "설날 연휴", "2026-02-17": "설날", "2026-02-18": "설날 연휴",
+            "2026-03-01": "삼일절", "2026-05-05": "어린이날", "2026-05-24": "부처님오신날", "2026-06-06": "현충일",
+            "2026-08-15": "광복절", "2026-09-24": "추석 연휴", "2026-09-25": "추석", "2026-09-26": "추석 연휴",
+            "2026-10-03": "개천절", "2026-10-09": "한글날", "2026-12-25": "성탄절"
+        };
+
+        const colorPalette = [
+            "#3b82f6", "#60a5fa", "#1d4ed8", "#2563eb",
+            "#ec4899", "#f472b6", "#be185d", "#db2777",
+            "#10b981", "#34d399", "#059669", "#047857",
+            "#f59e0b", "#fbbf24", "#d97706", "#b45309",
+            "#8b5cf6", "#a78bfa", "#7c3aed", "#06b6d4"
+        ];
+
+        let reservations = {}; 
+        let selectedDateStrForModal = null;
+
+        function showLoginModal() {
+            document.getElementById('mainApp').classList.add('hidden');
+            document.getElementById('loginModal').classList.remove('hidden');
+            document.getElementById('loginModal').classList.add('flex');
         }
-      }
 
-      // Auth 에러가 나더라도 UI가 멈추지 않도록 try-catch 처리
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
+        function showMainApp() {
+            document.getElementById('loginModal').classList.add('hidden');
+            document.getElementById('loginModal').classList.remove('flex');
+            document.getElementById('mainApp').classList.remove('hidden');
         }
-      } catch (err) {
-        console.warn("Firebase Auth 경고 (익명 로그인 미활성화 상태일 수 있음):", err);
-      }
 
-      setupFirestoreListeners();
-    }
+        async function handleLogin(event) {
+            event.preventDefault();
+            const name = document.getElementById('loginName').value.trim();
+            const dept = document.getElementById('loginDept').value;
+            if (!name || !dept) return;
 
-    function setupFirestoreListeners() {
-      // 1. 주차 예약 목록 수신
-      const resCollection = collection(db, 'artifacts', appId, 'public', 'data', 'reservations');
-      onSnapshot(resCollection, (snapshot) => {
-        const list = [];
-        snapshot.forEach(doc => list.push({ id: doc.id, ...doc.data() }));
-        state.reservations = list;
-        state.isLoading = false;
-        render();
-      }, (error) => {
-        console.error("Firestore 수신 오류:", error);
-        state.isLoading = false;
-        render();
-      });
+            const btn = document.getElementById('loginSubmitBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 접속 중...';
 
-      // 2. 프로필 목록 수신
-      const profileCollection = collection(db, 'artifacts', appId, 'public', 'data', 'user_profiles');
-      onSnapshot(profileCollection, (snapshot) => {
-        const profiles = {};
-        snapshot.forEach(doc => { profiles[doc.id] = doc.data(); });
-        state.userProfiles = profiles;
+            window.currentUser = { name, dept, color: colorPalette[0] };
 
-        if (state.currentUser && profiles[state.currentUser.id]) {
-          state.currentUser.carColor = profiles[state.currentUser.id].carColor || state.currentUser.carColor;
+            try {
+                const userCred = await window.signInAnonymously(window.firebaseAuth);
+                const user = userCred.user;
+                
+                const profileRef = window.doc(window.firebaseDb, 'users', user.uid);
+                await window.setDoc(profileRef, window.currentUser);
+
+                window.updateUserUI();
+                showMainApp();
+                window.startReservationsListener();
+                showToast(`환영합니다, ${window.currentUser.name}님!`);
+            } catch (e) {
+                console.error(e);
+                showToast("로그인 처리 중 오류가 발생했습니다.");
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '입장하기';
+            }
         }
-        render();
-      }, (err) => console.warn("프로필 수신 실패:", err));
-    }
 
-    // 로그인 / 접속 처리
-    window.handleUserLogin = async function(e) {
-      e.preventDefault();
-      const nameInput = document.getElementById("username-input");
-      const teamInput = document.getElementById("team-select");
-      
-      const name = nameInput ? nameInput.value.trim() : "";
-      const team = teamInput ? teamInput.value : "DEV";
+        async function logout() {
+            if(window.firebaseAuth) {
+                await window.signOut(window.firebaseAuth);
+            }
+            window.location.reload();
+        }
 
-      if (!name) {
-        state.loginError = "이름을 입력해 주세요.";
-        render();
-        return;
-      }
+        function updateUserUI() {
+            if(!window.currentUser) return;
+            document.getElementById('currentUserNameDisplay').textContent = `${window.currentUser.name} (${window.currentUser.dept})`;
+            const indicator = document.getElementById('userColorIndicator');
+            indicator.textContent = window.currentUser.name.charAt(0);
+            indicator.style.backgroundColor = window.currentUser.color;
+            document.getElementById('currentColorCodeText').style.backgroundColor = window.currentUser.color;
+            window.renderColorPalettePicker();
+        }
 
-      const userKey = `user_${name.replace(/\s+/g, '')}_${team}`;
-      const defaultColor = COLOR_PRESETS[Math.floor(Math.random() * COLOR_PRESETS.length)];
-      const existingProfile = state.userProfiles[userKey];
-      const carColor = existingProfile?.carColor || defaultColor;
+        window.startReservationsListener = function() {
+            const q = window.collection(window.firebaseDb, 'reservations');
+            window.onSnapshot(q, (snapshot) => {
+                reservations = {};
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    if (!reservations[data.date]) reservations[data.date] = [];
+                    reservations[data.date].push({ id: doc.id, ...data });
+                });
 
-      const userObj = {
-        id: userKey,
-        name: name,
-        team: team,
-        carColor: carColor,
-        isAdmin: team === "SUP" || name.includes("관리자")
-      };
+                Object.keys(reservations).forEach(date => {
+                    reservations[date].sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+                });
 
-      try {
-        const userDoc = doc(db, 'artifacts', appId, 'public', 'data', 'user_profiles', userKey);
-        await setDoc(userDoc, {
-          name: name,
-          team: team,
-          carColor: carColor,
-          updatedAt: Date.now()
-        }, { merge: true });
+                window.renderCalendar();
+                window.renderMyReservations();
+                
+                if (selectedDateStrForModal && !document.getElementById('dayDetailModal').classList.contains('hidden')) {
+                    openDayDetailModal(selectedDateStrForModal);
+                }
+            });
+        }
 
-        localStorage.setItem("parking_app_saved_user", JSON.stringify(userObj));
-        state.currentUser = userObj;
-        state.loginError = "";
-        render();
-      } catch (err) {
-        console.error("로그인 DB 처리 중 에러:", err);
-        state.loginError = "DB 접근 권한 오류입니다. Firebase Rules를 확인해 주세요.";
-        render();
-      }
-    };
+        function togglePalettePopup() { document.getElementById('colorPaletteModal').classList.remove('hidden'); }
+        function closeColorPaletteModal() { document.getElementById('colorPaletteModal').classList.add('hidden'); }
 
-    // 로그아웃
-    window.handleLogout = function() {
-      localStorage.removeItem("parking_app_saved_user");
-      state.currentUser = null;
-      render();
-    };
+        window.renderColorPalettePicker = function() {
+            if(!window.currentUser) return;
+            const container = document.getElementById('paletteGrid');
+            container.innerHTML = '';
+            colorPalette.forEach(hex => {
+                const btn = document.createElement('button');
+                const isSelected = window.currentUser.color === hex;
+                btn.className = `w-12 h-12 rounded-2xl transition transform hover:scale-110 mx-auto ${isSelected ? 'ring-4 ring-white ring-offset-2 ring-offset-slate-900 scale-110 shadow-lg' : 'opacity-80 hover:opacity-100'}`;
+                btn.style.backgroundColor = hex;
+                btn.onclick = () => updateMyColor(hex);
+                container.appendChild(btn);
+            });
+        }
 
-    // UI 렌더링 함수
-    function render() {
-      const appEl = document.getElementById("app");
-      if (!appEl) return;
+        async function updateMyColor(newColor) {
+            if(!window.firebaseAuth.currentUser || !window.currentUser) return;
+            window.currentUser.color = newColor;
+            window.updateUserUI();
+            showToast("색상 변경중...");
 
-      if (state.isLoading) {
-        appEl.innerHTML = `
-          <div class="flex items-center justify-center min-h-screen">
-            <div class="text-center">
-              <div class="w-12 h-12 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-              <p class="text-slate-600 font-medium">시스템 불러오는 중...</p>
-            </div>
-          </div>
-        `;
-        return;
-      }
+            try {
+                const profileRef = window.doc(window.firebaseDb, 'users', window.firebaseAuth.currentUser.uid);
+                await window.setDoc(profileRef, window.currentUser);
 
-      // 1. 미접속 상태 -> 로그인 화면
-      if (!state.currentUser) {
-        appEl.innerHTML = `
-          <div class="flex items-center justify-center min-h-screen px-4">
-            <div class="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-slate-100">
-              <div class="text-center mb-8">
-                <h1 class="text-2xl font-bold text-slate-800">주차 예약 시스템</h1>
-                <p class="text-sm text-slate-500 mt-2">부서와 이름을 입력하여 접속하세요.</p>
-              </div>
+                const updates = [];
+                Object.values(reservations).forEach(dayList => {
+                    dayList.forEach(res => {
+                        if (res.userId === window.firebaseAuth.currentUser.uid) {
+                            const resRef = window.doc(window.firebaseDb, 'reservations', res.id);
+                            updates.push(window.updateDoc(resRef, { color: newColor }));
+                        }
+                    });
+                });
+                await Promise.all(updates);
+                showToast('색상이 변경되었습니다.');
+            } catch(e) {
+                console.error(e);
+            }
+        }
 
-              <form onsubmit="handleUserLogin(event)" class="space-y-4">
-                <div>
-                  <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">소속 부서</label>
-                  <select id="team-select" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500">
-                    <option value="DEV">개발팀</option>
-                    <option value="DESIGN">디자인팀</option>
-                    <option value="MARKETING">마케팅팀</option>
-                    <option value="SUP">지원팀 (관리자)</option>
-                  </select>
-                </div>
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
+            document.getElementById(`tab-${tabId}`).classList.remove('hidden');
 
-                <div>
-                  <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">이름</label>
-                  <input type="text" id="username-input" placeholder="홍길동" class="w-full px-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500" required />
-                </div>
+            document.querySelectorAll('aside nav a').forEach(a => {
+                a.className = "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all";
+            });
+            document.querySelector(`.nav-item-${tabId}`).className = "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/20";
+        }
 
-                ${state.loginError ? `<p class="text-xs text-red-500 font-medium">${state.loginError}</p>` : ''}
+        function changeMonth(direction) {
+            currentDate.setMonth(currentDate.getMonth() + direction);
+            window.renderCalendar();
+        }
 
-                <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-blue-500/30 transition duration-200">
-                  접속하기
-                </button>
-              </form>
-            </div>
-          </div>
-        `;
-        return;
-      }
+        window.renderCalendar = function() {
+            const year = currentDate.getFullYear();
+            const month = currentDate.getMonth();
 
-      // 2. 접속 완료 상태 -> 달력 및 주차 현황 화면
-      appEl.innerHTML = `
-        <div class="max-w-4xl mx-auto px-4 py-6">
-          <header class="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm mb-6 border border-slate-200">
-            <div>
-              <span class="text-xs font-semibold px-2.5 py-1 bg-blue-50 text-blue-600 rounded-lg">${state.currentUser.team}</span>
-              <h2 class="text-lg font-bold text-slate-800 inline-block ml-2">${state.currentUser.name} 님</h2>
-            </div>
-            <button onclick="handleLogout()" class="text-xs text-slate-400 hover:text-slate-600 underline">로그아웃</button>
-          </header>
+            document.getElementById('calendarMonthTitle').textContent = `${year}년 ${month + 1}월`;
 
-          <main class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-            <h3 class="text-xl font-bold text-slate-800 mb-4">주차 예약 현황</h3>
-            <p class="text-sm text-slate-600">정상적으로 화면 전환이 완료되었습니다.</p>
-          </main>
-        </div>
-      `;
-    }
+            const firstDayIndex = new Date(year, month, 1).getDay();
+            const lastDay = new Date(year, month + 1, 0).getDate();
 
-    // 초기 실행
-    initAuthAndData();
-  </script>
+            const grid = document.getElementById('calendarGrid');
+            grid.innerHTML = '';
+
+            for (let i = 0; i < firstDayIndex; i++) {
+                const emptyDiv = document.createElement('div');
+                emptyDiv.className = "h-20 sm:h-28 md:h-32 bg-slate-950/30 rounded-xl border border-slate-900 opacity-30";
+                grid.appendChild(emptyDiv);
+            }
+
+            for (let day = 1; day <= lastDay; day++) {
+                const monthStr = String(month + 1).padStart(2, '0');
+                const dayStr = String(day).padStart(2, '0');
+                const dateKey = `${year}-${monthStr}-${dayStr}`;
+
+                const holidayName = holidays[dateKey];
+                const dayOfWeek = new Date(year, month, day).getDay();
+                const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+                
+                const dayReservations = reservations[dateKey] || [];
+                const count = dayReservations.length;
+                const isMyReserved = window.currentUser && dayReservations.some(r => window.firebaseAuth.currentUser && r.userId === window.firebaseAuth.currentUser.uid);
+
+                const cell = document.createElement('div');
+                
+                let bgClass = "bg-slate-800/60 border-slate-700/80 hover:border-slate-500";
+                if (count >= 4) bgClass = "bg-rose-950/30 border-rose-900/60 hover:border-rose-600";
+                else if (count === 3) bgClass = "bg-amber-950/30 border-amber-900/60 hover:border-amber-600";
+                if (isMyReserved) bgClass += " ring-2 ring-blue-500 bg-blue-950/20";
+
+                cell.className = `h-20 sm:h-28 md:h-32 rounded-xl border p-1.5 sm:p-2.5 flex flex-col justify-between cursor-pointer transition-all select-none relative ${bgClass}`;
+
+                let dotsHtml = '<div class="grid grid-cols-2 gap-1 sm:gap-2 w-6 sm:w-8 mx-auto my-auto">';
+                for (let i = 0; i < 4; i++) {
+                    if (i < count) {
+                        dotsHtml += `<div class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow-sm mx-auto" style="background-color: ${dayReservations[i].color};"></div>`;
+                    } else {
+                        dotsHtml += `<div class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-slate-800/80 border border-slate-700 mx-auto"></div>`;
+                    }
+                }
+                dotsHtml += '</div>';
+
+                let holidayHtml = holidayName ? `<span class="text-[8px] sm:text-[10px] bg-rose-500/20 text-rose-300 px-1 sm:px-1.5 py-0.5 rounded font-medium truncate max-w-[50px] sm:max-w-[70px] hidden sm:block">${holidayName}</span>` : '';
+
+                let dateColor = 'text-slate-200';
+                if (holidayName || isWeekend) dateColor = 'text-rose-400';
+
+                cell.innerHTML = `
+                    <div class="flex items-start sm:items-center justify-between">
+                        <span class="font-bold text-xs sm:text-sm ${dateColor}">${day}</span>
+                        <div class="flex flex-col sm:flex-row items-end sm:items-center gap-1">
+                            ${holidayHtml}
+                            ${isMyReserved ? '<span class="w-1.5 h-1.5 sm:w-2 sm:h-2 rounded-full bg-blue-500 animate-pulse"></span>' : ''}
+                        </div>
+                    </div>
+                    ${dotsHtml}
+                    <div class="h-1 sm:h-3"></div>
+                `;
+
+                let pressTimer;
+                const startPress = () => { pressTimer = setTimeout(() => { openDayDetailModal(dateKey); }, 500); };
+                const cancelPress = () => { clearTimeout(pressTimer); };
+
+                cell.addEventListener('mousedown', startPress);
+                cell.addEventListener('touchstart', startPress, {passive: true});
+                cell.addEventListener('mouseup', cancelPress);
+                cell.addEventListener('mouseleave', cancelPress);
+                cell.addEventListener('touchend', cancelPress);
+
+                cell.onclick = (e) => {
+                    if (pressTimer) clearTimeout(pressTimer);
+                    handleCellClick(dateKey);
+                };
+                grid.appendChild(cell);
+            }
+        }
+
+        async function handleCellClick(dateKey) {
+            if (!window.currentUser || !window.firebaseAuth.currentUser) return;
+            const dayList = reservations[dateKey] || [];
+            
+            let myLastRes = null;
+            for(let i = dayList.length -1; i >= 0; i--) {
+                if(dayList[i].userId === window.firebaseAuth.currentUser.uid) {
+                    myLastRes = dayList[i];
+                    break;
+                }
+            }
+
+            try {
+                if (myLastRes) {
+                    await window.deleteDoc(window.doc(window.firebaseDb, 'reservations', myLastRes.id));
+                    showToast(`${dateKey} 1대 예약을 취소했습니다.`);
+                } else {
+                    if (dayList.length >= 4) {
+                        showToast(`⚠️ 만차(4대)되어 예약할 수 없습니다.`);
+                        return;
+                    }
+                    await window.addDoc(window.collection(window.firebaseDb, 'reservations'), {
+                        date: dateKey,
+                        name: window.currentUser.name,
+                        dept: window.currentUser.dept,
+                        color: window.currentUser.color,
+                        userId: window.firebaseAuth.currentUser.uid,
+                        createdAt: Date.now()
+                    });
+                    showToast(`✨ ${dateKey} 주차가 예약되었습니다!`);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        function openDayDetailModal(dateKey) {
+            selectedDateStrForModal = dateKey;
+            const dayList = reservations[dateKey] || [];
+            const holidayName = holidays[dateKey];
+            const dayOfWeek = new Date(dateKey).getDay();
+            const isWeekend = (dayOfWeek === 0 || dayOfWeek === 6);
+
+            let titleColor = (holidayName || isWeekend) ? "text-rose-400" : "text-white";
+            
+            document.getElementById('modalDateTitle').className = `text-base font-bold ${titleColor}`;
+            document.getElementById('modalDateTitle').textContent = `${dateKey} ${holidayName ? `(${holidayName})` : ''}`;
+            document.getElementById('modalDateSubtitle').textContent = `최대 4대 중 ${dayList.length}대 예약 완료`;
+
+            const listContainer = document.getElementById('modalReservationList');
+            if (dayList.length === 0) {
+                listContainer.innerHTML = `<div class="flex h-full items-center justify-center text-slate-500 py-6">아직 예약된 차량이 없습니다.</div>`;
+            } else {
+                listContainer.innerHTML = dayList.map((r, idx) => {
+                    const isMine = window.firebaseAuth.currentUser && r.userId === window.firebaseAuth.currentUser.uid;
+                    const cancelBtnHtml = isMine ? 
+                        `<button onclick="cancelSpecificReservation('${r.id}')" class="ml-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/40 px-2 py-1 rounded text-[10px] transition">X 취소</button>` : '';
+
+                    return `
+                    <div class="flex justify-between items-center p-2.5 rounded-lg bg-slate-800/60 mb-2">
+                        <div class="flex items-center gap-3">
+                            <span class="w-3 h-3 rounded-full shrink-0 shadow-sm" style="background-color: ${r.color};"></span>
+                            <span class="font-medium ${isMine ? 'text-blue-400' : 'text-slate-200'}">${idx + 1}. [${r.dept}] ${r.name}</span>
+                        </div>
+                        <div class="flex items-center">
+                            <span class="text-[10px] text-slate-400">예약완료</span>
+                            ${cancelBtnHtml}
+                        </div>
+                    </div>
+                `}).join('');
+            }
+
+            const actionBtn = document.getElementById('modalActionBtn');
+            if (dayList.length >= 4) {
+                actionBtn.textContent = "만차 (예약불가)";
+                actionBtn.disabled = true;
+                actionBtn.className = "flex-1 px-4 py-3 rounded-xl bg-slate-800 text-slate-500 font-bold text-xs cursor-not-allowed";
+            } else {
+                actionBtn.textContent = "차량 추가 예약하기";
+                actionBtn.disabled = false;
+                actionBtn.className = "flex-1 px-4 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow transition";
+            }
+
+            document.getElementById('dayDetailModal').classList.remove('hidden');
+        }
+
+        function closeDayModal() {
+            document.getElementById('dayDetailModal').classList.add('hidden');
+            selectedDateStrForModal = null;
+        }
+
+        async function cancelSpecificReservation(docId) {
+            if (!window.firebaseAuth.currentUser) return;
+            try {
+                await window.deleteDoc(window.doc(window.firebaseDb, 'reservations', docId));
+                showToast(`선택한 차량 예약을 취소했습니다.`);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+
+        async function addCarFromModal() {
+            if (selectedDateStrForModal && window.currentUser && window.firebaseAuth.currentUser) {
+                const dayList = reservations[selectedDateStrForModal] || [];
+                if (dayList.length < 4) {
+                    try {
+                        const actionBtn = document.getElementById('modalActionBtn');
+                        actionBtn.disabled = true;
+                        
+                        await window.addDoc(window.collection(window.firebaseDb, 'reservations'), {
+                            date: selectedDateStrForModal,
+                            name: window.currentUser.name,
+                            dept: window.currentUser.dept,
+                            color: window.currentUser.color,
+                            userId: window.firebaseAuth.currentUser.uid,
+                            createdAt: Date.now()
+                        });
+                        showToast(`차량이 추가 예약되었습니다!`);
+                    } catch(e) {
+                        console.error(e);
+                    }
+                }
+            }
+        }
+
+        window.renderMyReservations = function() {
+            const tbody = document.getElementById('myReservationsTable');
+            tbody.innerHTML = '';
+            if (!window.currentUser || !window.firebaseAuth.currentUser) return;
+
+            let myItems = [];
+            Object.keys(reservations).forEach(dateKey => {
+                reservations[dateKey].forEach(r => {
+                    if (r.userId === window.firebaseAuth.currentUser.uid) {
+                        myItems.push({ dateKey, id: r.id, createdAt: r.createdAt });
+                    }
+                });
+            });
+
+            myItems.sort((a, b) => {
+                if(a.dateKey === b.dateKey) return (a.createdAt || 0) - (b.createdAt || 0);
+                return a.dateKey.localeCompare(b.dateKey);
+            });
+
+            if (myItems.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="4" class="p-4 text-center text-slate-500">예약된 주차 일정이 없습니다.</td></tr>`;
+                return;
+            }
+
+            myItems.forEach(item => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-800/50 transition-colors";
+                tr.innerHTML = `
+                    <td class="p-3 font-mono font-bold text-white">${item.dateKey}</td>
+                    <td class="p-3 text-slate-300">${window.currentUser.name}</td>
+                    <td class="p-3 text-slate-400">${window.currentUser.dept}</td>
+                    <td class="p-3 text-right">
+                        <button onclick="cancelSpecificReservation('${item.id}')" class="text-rose-400 hover:text-rose-300 text-xs px-2 py-1 bg-rose-500/10 rounded">취소</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMsg').textContent = msg;
+            toast.classList.remove('opacity-0', 'pointer-events-none');
+            toast.classList.add('opacity-100', 'translate-y-0');
+            setTimeout(() => {
+                toast.classList.add('opacity-0', 'pointer-events-none');
+                toast.classList.remove('opacity-100');
+            }, 2500);
+        }
+    </script>
 </body>
 </html>
