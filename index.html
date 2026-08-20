@@ -76,25 +76,11 @@
         </div>
     </div>
 
-    <!-- 메인 어플리케이션 레이아웃 -->
     <div id="mainApp" class="flex-1 flex flex-col md:flex-row h-full overflow-hidden hidden">
-        <aside class="w-full md:w-64 bg-slate-900 border-r border-slate-800 flex flex-col justify-between shrink-0 z-20">
-            <div>
-                <!-- 네비게이션 메뉴 (로고, 텍스트 상단 여백 추가) -->
-                <nav class="p-4 space-y-1.5 mt-2">
-                    <a href="#" onclick="switchTab('calendar')" class="nav-item-calendar flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/20">
-                        <i class="fa-solid fa-calendar-alt w-5 text-center"></i>
-                        주차 예약
-                    </a>
-                    <a href="#" onclick="switchTab('status')" class="nav-item-status flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all">
-                        <i class="fa-solid fa-car w-5 text-center"></i>
-                        내 예약 현황
-                    </a>
-                </nav>
-            </div>
-
-            <!-- 사용자 정보 및 프로필 영역 -->
-            <div class="p-4 border-t border-slate-800 bg-slate-900/50 space-y-3">
+        <aside class="w-full md:w-64 bg-slate-900 md:border-r border-slate-800 flex flex-col shrink-0 z-20">
+            
+            <!-- 사용자 정보 및 프로필 영역 (모바일에서 1순위 상단 배치, 데스크탑에서는 하단) -->
+            <div class="order-1 md:order-2 p-4 border-b md:border-b-0 md:border-t border-slate-800 bg-slate-900/50 space-y-3 md:mt-auto">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3 min-w-0">
                         <div id="userColorIndicator" class="w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0 shadow-md cursor-pointer relative group" title="클릭하여 색상 변경" onclick="togglePalettePopup()">
@@ -113,12 +99,27 @@
                     </button>
                 </div>
             </div>
+
+            <!-- 네비게이션 메뉴 (모바일에서 2순위 탭 형태 가로 배치, 데스크탑에서는 세로 배치) -->
+            <div class="order-2 md:order-1">
+                <nav class="p-3 md:p-4 flex gap-2 md:flex-col md:space-y-1.5 overflow-x-auto border-b md:border-b-0 border-slate-800">
+                    <a href="#" onclick="switchTab('calendar')" class="nav-item-calendar flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 px-4 py-2.5 md:py-3 rounded-xl text-sm font-medium transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/20 whitespace-nowrap">
+                        <i class="fa-solid fa-calendar-alt w-5 text-center"></i>
+                        주차 예약
+                    </a>
+                    <a href="#" onclick="switchTab('status')" class="nav-item-status flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 px-4 py-2.5 md:py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all whitespace-nowrap">
+                        <i class="fa-solid fa-car w-5 text-center"></i>
+                        내 예약 현황
+                    </a>
+                </nav>
+            </div>
         </aside>
 
+        <!-- 메인 콘텐츠 영역 -->
         <main class="flex-1 overflow-y-auto flex flex-col h-full bg-slate-950 relative">
             
-            <!-- Tab 1: Calendar View (불필요한 헤더 삭제됨) -->
-            <div id="tab-calendar" class="tab-content p-4 sm:p-6 space-y-4 sm:space-y-6 mt-2">
+            <!-- Tab 1: Calendar View -->
+            <div id="tab-calendar" class="tab-content p-4 sm:p-6 space-y-4 sm:space-y-6 mt-2 md:mt-0">
                 <!-- 달력 컨트롤러 및 안내 -->
                 <div class="flex flex-col sm:flex-row items-center justify-between gap-4 p-4 rounded-2xl bg-slate-900 border border-slate-800">
                     <div class="flex items-center gap-4">
@@ -132,7 +133,7 @@
                     </div>
 
                     <div class="flex items-center gap-4 text-xs font-medium">
-                        <div class="flex items-center gap-1.5 text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/50">
+                        <div class="flex items-center gap-1.5 text-slate-400 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700/50 whitespace-nowrap overflow-hidden text-ellipsis w-full justify-center">
                             <i class="fa-solid fa-circle-info text-blue-400"></i>
                             클릭: 예약/취소 | 꾹 누르기: 다중 예약/예약현황
                         </div>
@@ -140,6 +141,7 @@
                 </div>
 
                 <div class="p-4 sm:p-6 rounded-2xl bg-slate-900 border border-slate-800 shadow-xl">
+                    <!-- 요일 헤더 -->
                     <div class="grid grid-cols-7 gap-1 sm:gap-2 text-center text-xs font-bold text-slate-400 mb-3">
                         <span class="text-rose-400">일</span>
                         <span>월</span>
@@ -157,7 +159,7 @@
             </div>
 
             <!-- Tab 2: My Status View -->
-            <div id="tab-status" class="tab-content p-4 sm:p-6 space-y-6 mt-2 hidden">
+            <div id="tab-status" class="tab-content p-4 sm:p-6 space-y-6 mt-2 md:mt-0 hidden">
                 <div class="max-w-4xl space-y-6">
                     <div class="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-4">
                         <h4 class="text-sm font-bold text-white mb-2">내가 예약한 주차 일자 목록</h4>
@@ -456,14 +458,23 @@
             }
         }
 
+        // 안정적인 탭 전환 로직
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.add('hidden'));
             document.getElementById(`tab-${tabId}`).classList.remove('hidden');
 
+            // 모든 네비게이션 아이템 스타일 초기화 (기본 상태)
             document.querySelectorAll('aside nav a').forEach(a => {
-                a.className = "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:bg-slate-800 hover:text-slate-200 transition-all";
+                a.classList.remove('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-600/20');
+                a.classList.add('text-slate-400', 'hover:bg-slate-800', 'hover:text-slate-200');
             });
-            document.querySelector(`.nav-item-${tabId}`).className = "flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/20";
+            
+            // 선택된 탭 활성화 스타일 적용
+            const activeTab = document.querySelector(`.nav-item-${tabId}`);
+            if (activeTab) {
+                activeTab.classList.remove('text-slate-400', 'hover:bg-slate-800', 'hover:text-slate-200');
+                activeTab.classList.add('bg-blue-600', 'text-white', 'shadow-lg', 'shadow-blue-600/20');
+            }
         }
 
         function changeMonth(direction) {
