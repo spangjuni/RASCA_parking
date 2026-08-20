@@ -60,6 +60,7 @@
                     <select id="loginDept" required 
                         class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-blue-500 transition">
                         <option value="" disabled selected>부서를 선택하세요</option>
+                        <option value="CEO">CEO</option>
                         <option value="SUP">SUP</option>
                         <option value="2D">2D</option>
                         <option value="3D">3D</option>
@@ -79,7 +80,7 @@
     <div id="mainApp" class="flex-1 flex flex-col md:flex-row h-full overflow-hidden hidden">
         <aside class="w-full md:w-64 bg-slate-900 md:border-r border-slate-800 flex flex-col shrink-0 z-20">
             
-            <!-- 사용자 정보 및 프로필 영역 (모바일에서 1순위 상단 배치, 데스크탑에서는 하단) -->
+            <!-- 사용자 정보 및 프로필 영역 -->
             <div class="order-1 md:order-2 p-4 border-b md:border-b-0 md:border-t border-slate-800 bg-slate-900/50 space-y-3 md:mt-auto">
                 <div class="flex items-center justify-between">
                     <div class="flex items-center gap-3 min-w-0">
@@ -100,7 +101,7 @@
                 </div>
             </div>
 
-            <!-- 네비게이션 메뉴 (모바일에서 2순위 탭 형태 가로 배치, 데스크탑에서는 세로 배치) -->
+            <!-- 네비게이션 메뉴 -->
             <div class="order-2 md:order-1">
                 <nav class="p-3 md:p-4 flex gap-2 md:flex-col md:space-y-1.5 overflow-x-auto border-b md:border-b-0 border-slate-800">
                     <a href="#" onclick="switchTab('calendar')" class="nav-item-calendar flex-1 md:flex-none flex items-center justify-center md:justify-start gap-2 px-4 py-2.5 md:py-3 rounded-xl text-sm font-medium transition-all bg-blue-600 text-white shadow-lg shadow-blue-600/20 whitespace-nowrap">
@@ -190,7 +191,8 @@
             <div class="flex items-center justify-between">
                 <div>
                     <h3 class="text-base font-bold text-white">나의 예약 색상 선택</h3>
-                    <p class="text-xs text-slate-400">캘린더에 표시될 20가지 컬러 중 선택하세요.</p>
+                    <!-- 25가지 컬러 텍스트 수정 -->
+                    <p class="text-xs text-slate-400">캘린더에 표시될 25가지 컬러 중 선택하세요.</p>
                 </div>
                 <button onclick="closeColorPaletteModal()" class="text-slate-400 hover:text-white">
                     <i class="fa-solid fa-xmark text-lg"></i>
@@ -215,7 +217,8 @@
                 </div>
                 <div>
                     <h3 id="modalDateTitle" class="text-base font-bold text-white">2026년 8월 20일</h3>
-                    <p id="modalDateSubtitle" class="text-xs text-slate-400">최대 4대 중 2대 예약 완료</p>
+                    <!-- 최대 6대 텍스트 수정 -->
+                    <p id="modalDateSubtitle" class="text-xs text-slate-400">최대 6대 중 2대 예약 완료</p>
                 </div>
             </div>
 
@@ -320,12 +323,14 @@
             "2026-10-03": "개천절", "2026-10-09": "한글날", "2026-12-25": "성탄절"
         };
 
+        // 색상 25개로 확장 (검정, 흰색, 회색 포함, 총 25개)
         const colorPalette = [
             "#3b82f6", "#60a5fa", "#1d4ed8", "#2563eb",
             "#ec4899", "#f472b6", "#be185d", "#db2777",
             "#10b981", "#34d399", "#059669", "#047857",
             "#f59e0b", "#fbbf24", "#d97706", "#b45309",
-            "#8b5cf6", "#a78bfa", "#7c3aed", "#06b6d4"
+            "#8b5cf6", "#a78bfa", "#7c3aed", "#06b6d4",
+            "#000000", "#ffffff", "#9ca3af", "#ef4444", "#84cc16" // 추가된 색상 (검,흰,회,빨강,연두)
         ];
 
         let reservations = {}; 
@@ -388,6 +393,14 @@
             const indicator = document.getElementById('userColorIndicator');
             indicator.textContent = window.currentUser.name.charAt(0);
             indicator.style.backgroundColor = window.currentUser.color;
+            
+            // 텍스트가 흰색일 경우 배경이 흰색이면 안 보이므로 처리
+            if (window.currentUser.color === "#ffffff") {
+                indicator.style.color = "#000000";
+            } else {
+                indicator.style.color = "#ffffff";
+            }
+
             document.getElementById('currentColorCodeText').style.backgroundColor = window.currentUser.color;
             window.renderColorPalettePicker();
         }
@@ -425,7 +438,7 @@
             colorPalette.forEach(hex => {
                 const btn = document.createElement('button');
                 const isSelected = window.currentUser.color === hex;
-                btn.className = `w-12 h-12 rounded-2xl transition transform hover:scale-110 mx-auto ${isSelected ? 'ring-4 ring-white ring-offset-2 ring-offset-slate-900 scale-110 shadow-lg' : 'opacity-80 hover:opacity-100'}`;
+                btn.className = `w-12 h-12 rounded-2xl transition transform hover:scale-110 mx-auto ${isSelected ? 'ring-4 ring-blue-400 ring-offset-2 ring-offset-slate-900 scale-110 shadow-lg' : 'opacity-80 hover:opacity-100 border border-slate-700'}`;
                 btn.style.backgroundColor = hex;
                 btn.onclick = () => updateMyColor(hex);
                 container.appendChild(btn);
@@ -445,12 +458,11 @@
                 const updates = [];
                 Object.values(reservations).forEach(dayList => {
                     dayList.forEach(res => {
-                        // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
                         if (res.name === window.currentUser.name && res.dept === window.currentUser.dept) {
                             const resRef = window.doc(window.firebaseDb, 'reservations', res.id);
                             updates.push(window.updateDoc(resRef, { 
                                 color: newColor,
-                                userId: window.firebaseAuth.currentUser.uid // 갱신된 UID 업데이트
+                                userId: window.firebaseAuth.currentUser.uid
                             }));
                         }
                     });
@@ -515,22 +527,23 @@
                 
                 const dayReservations = reservations[dateKey] || [];
                 const count = dayReservations.length;
-                // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
                 const isMyReserved = window.currentUser && dayReservations.some(r => r.name === window.currentUser.name && r.dept === window.currentUser.dept);
 
                 const cell = document.createElement('div');
                 
                 let bgClass = "bg-slate-800/60 border-slate-700/80 hover:border-slate-500";
-                if (count >= 4) bgClass = "bg-rose-950/30 border-rose-900/60 hover:border-rose-600";
-                else if (count === 3) bgClass = "bg-amber-950/30 border-amber-900/60 hover:border-amber-600";
+                // 6대 기준으로 배경색 알림 조건 수정
+                if (count >= 6) bgClass = "bg-rose-950/30 border-rose-900/60 hover:border-rose-600";
+                else if (count === 5) bgClass = "bg-amber-950/30 border-amber-900/60 hover:border-amber-600";
                 if (isMyReserved) bgClass += " ring-2 ring-blue-500 bg-blue-950/20";
 
                 cell.className = `h-20 sm:h-28 md:h-32 rounded-xl border p-1.5 sm:p-2.5 flex flex-col justify-between cursor-pointer transition-all select-none relative ${bgClass}`;
 
-                let dotsHtml = '<div class="grid grid-cols-2 gap-1 sm:gap-2 w-6 sm:w-8 mx-auto my-auto">';
-                for (let i = 0; i < 4; i++) {
+                // 3x2 배열을 위해 grid-cols-3 로 수정하고 6번 반복
+                let dotsHtml = '<div class="grid grid-cols-3 gap-1 sm:gap-1.5 w-10 sm:w-12 mx-auto my-auto">';
+                for (let i = 0; i < 6; i++) {
                     if (i < count) {
-                        dotsHtml += `<div class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow-sm mx-auto" style="background-color: ${dayReservations[i].color};"></div>`;
+                        dotsHtml += `<div class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow-sm mx-auto" style="background-color: ${dayReservations[i].color}; border: 1px solid rgba(255,255,255,0.1);"></div>`;
                     } else {
                         dotsHtml += `<div class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-slate-800/80 border border-slate-700 mx-auto"></div>`;
                     }
@@ -578,7 +591,6 @@
             
             let myLastRes = null;
             for(let i = dayList.length -1; i >= 0; i--) {
-                // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
                 if(dayList[i].name === window.currentUser.name && dayList[i].dept === window.currentUser.dept) {
                     myLastRes = dayList[i];
                     break;
@@ -590,8 +602,9 @@
                     await window.deleteDoc(window.doc(window.firebaseDb, 'reservations', myLastRes.id));
                     showToast(`${dateKey} 1대 예약을 취소했습니다.`);
                 } else {
-                    if (dayList.length >= 4) {
-                        showToast(`⚠️ 만차(4대)되어 예약할 수 없습니다.`);
+                    // 제한을 6대로 수정
+                    if (dayList.length >= 6) {
+                        showToast(`⚠️ 만차(6대)되어 예약할 수 없습니다.`);
                         return;
                     }
                     await window.addDoc(window.collection(window.firebaseDb, 'reservations'), {
@@ -620,14 +633,15 @@
             
             document.getElementById('modalDateTitle').className = `text-base font-bold ${titleColor}`;
             document.getElementById('modalDateTitle').textContent = `${dateKey} ${holidayName ? `(${holidayName})` : ''}`;
-            document.getElementById('modalDateSubtitle').textContent = `최대 4대 중 ${dayList.length}대 예약 완료`;
+            
+            // 최대 6대 텍스트로 수정
+            document.getElementById('modalDateSubtitle').textContent = `최대 6대 중 ${dayList.length}대 예약 완료`;
 
             const listContainer = document.getElementById('modalReservationList');
             if (dayList.length === 0) {
                 listContainer.innerHTML = `<div class="flex h-full items-center justify-center text-slate-500 py-6">아직 예약된 차량이 없습니다.</div>`;
             } else {
                 listContainer.innerHTML = dayList.map((r, idx) => {
-                    // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
                     const isMine = window.currentUser && r.name === window.currentUser.name && r.dept === window.currentUser.dept;
                     const cancelBtnHtml = isMine ? 
                         `<button onclick="cancelSpecificReservation('${r.id}')" class="ml-2 bg-rose-500/20 text-rose-400 hover:bg-rose-500/40 px-2 py-1 rounded text-[10px] transition">X 취소</button>` : '';
@@ -635,7 +649,7 @@
                     return `
                     <div class="flex justify-between items-center p-2.5 rounded-lg bg-slate-800/60 mb-2">
                         <div class="flex items-center gap-3">
-                            <span class="w-3 h-3 rounded-full shrink-0 shadow-sm" style="background-color: ${r.color};"></span>
+                            <span class="w-3 h-3 rounded-full shrink-0 shadow-sm border border-slate-700" style="background-color: ${r.color};"></span>
                             <span class="font-medium ${isMine ? 'text-blue-400' : 'text-slate-200'}">${idx + 1}. [${r.dept}] ${r.name}</span>
                         </div>
                         <div class="flex items-center">
@@ -647,7 +661,8 @@
             }
 
             const actionBtn = document.getElementById('modalActionBtn');
-            if (dayList.length >= 4) {
+            // 제한을 6대로 수정
+            if (dayList.length >= 6) {
                 actionBtn.textContent = "만차 (예약불가)";
                 actionBtn.disabled = true;
                 actionBtn.className = "flex-1 px-4 py-3 rounded-xl bg-slate-800 text-slate-500 font-bold text-xs cursor-not-allowed";
@@ -678,7 +693,8 @@
         async function addCarFromModal() {
             if (selectedDateStrForModal && window.currentUser && window.firebaseAuth.currentUser) {
                 const dayList = reservations[selectedDateStrForModal] || [];
-                if (dayList.length < 4) {
+                // 제한을 6대로 수정
+                if (dayList.length < 6) {
                     try {
                         const actionBtn = document.getElementById('modalActionBtn');
                         actionBtn.disabled = true;
@@ -707,7 +723,6 @@
             let myItems = [];
             Object.keys(reservations).forEach(dateKey => {
                 reservations[dateKey].forEach(r => {
-                    // 수정: 고유 ID(UID) 대신 '이름'과 '부서'가 일치하면 내 예약으로 판단
                     if (r.name === window.currentUser.name && r.dept === window.currentUser.dept) {
                         myItems.push({ dateKey, id: r.id, createdAt: r.createdAt });
                     }
