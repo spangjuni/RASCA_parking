@@ -315,6 +315,10 @@
         let currentDate = new Date(); 
         let currentUser = null; 
 
+        // 텔레그램 봇 설정 (실제 사용 시 발급받은 토큰과 ID로 변경해주세요)
+        const TELEGRAM_BOT_TOKEN = '8702536939:AAHudFY0o0jcLCpu_5toUeQuWdr7kCJ69Rg';
+        const TELEGRAM_CHAT_ID = '5599887446';
+
         // 주요 공휴일 데이터
         const holidays = {
             "2026-01-01": "신정", "2026-02-16": "설날 연휴", "2026-02-17": "설날", "2026-02-18": "설날 연휴",
@@ -585,6 +589,27 @@
             }
         }
 
+        // 텔레그램 메시지 전송 함수 추가
+        async function sendTelegramMessage(dateKey) {
+            if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID || TELEGRAM_BOT_TOKEN.includes('여기에')) return;
+            
+            const message = `📢 [주차 알림]\n${dateKey} 일자의 대표님 주차 자리가 비었습니다. 주차 가능합니다!`;
+            const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+            
+            try {
+                await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: TELEGRAM_CHAT_ID,
+                        text: message
+                    })
+                });
+            } catch (e) {
+                console.error("텔레그램 알림 전송 실패:", e);
+            }
+        }
+
         async function handleCellClick(dateKey) {
             if (!window.currentUser || !window.firebaseAuth.currentUser) return;
             const dayList = reservations[dateKey] || [];
@@ -599,8 +624,15 @@
 
             try {
                 if (myLastRes) {
+                    // 알림 조건: 부서가 CEO이거나 색상이 흰색(#ffffff)일 때
+                    const isCEO = myLastRes.dept === 'CEO' || myLastRes.color === '#ffffff';
                     await window.deleteDoc(window.doc(window.firebaseDb, 'reservations', myLastRes.id));
                     showToast(`${dateKey} 1대 예약을 취소했습니다.`);
+                    
+                    // 대표님이 취소한 경우 텔레그램 알림 전송
+                    if (isCEO) {
+                        sendTelegramMessage(dateKey);
+                    }
                 } else {
                     // 제한을 6대로 수정
                     if (dayList.length >= 6) {
@@ -682,9 +714,29 @@
 
         async function cancelSpecificReservation(docId) {
             if (!window.firebaseAuth.currentUser) return;
+            
+            // 삭제할 예약 정보 미리 찾기 (대표님인지 확인하기 위함)
+            let resToDelete = null;
+            for (let date in reservations) {
+                const found = reservations[date].find(r => r.id === docId);
+                if (found) {
+                    resToDelete = found;
+                    break;
+                }
+            }
+
             try {
                 await window.deleteDoc(window.doc(window.firebaseDb, 'reservations', docId));
                 showToast(`선택한 차량 예약을 취소했습니다.`);
+                
+                // 대표님이 취소한 경우 텔레그램 알림 전송
+                if (resToDelete) {
+                    // 알림 조건: 부서가 CEO이거나 색상이 흰색(#ffffff)일 때
+                    const isCEO = resToDelete.dept === 'CEO' || resToDelete.color === '#ffffff';
+                    if (isCEO) {
+                        sendTelegramMessage(resToDelete.date);
+                    }
+                }
             } catch (e) {
                 console.error(e);
             }
