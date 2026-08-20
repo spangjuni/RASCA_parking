@@ -539,8 +539,8 @@
 
                 cell.className = `h-20 sm:h-28 md:h-32 rounded-xl border p-1.5 sm:p-2.5 flex flex-col justify-between cursor-pointer transition-all select-none relative ${bgClass}`;
 
-                // 3x2 배열을 위해 grid-cols-3 로 수정하고 6번 반복
-                let dotsHtml = '<div class="grid grid-cols-3 gap-1 sm:gap-1.5 w-10 sm:w-12 mx-auto my-auto">';
+                // 2x3 배열을 위해 grid-cols-2 로 수정 (모바일 최적화)
+                let dotsHtml = '<div class="grid grid-cols-2 gap-1 sm:gap-1.5 w-7 sm:w-9 mx-auto my-auto">';
                 for (let i = 0; i < 6; i++) {
                     if (i < count) {
                         dotsHtml += `<div class="w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full shadow-sm mx-auto" style="background-color: ${dayReservations[i].color}; border: 1px solid rgba(255,255,255,0.1);"></div>`;
